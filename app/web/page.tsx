@@ -21,9 +21,60 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useCart } from "../context/cart-context"
-import { products } from "../data/products"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+
+// Productos de ejemplo para la página web
+const webProducts = [
+  {
+    id: 1,
+    sku: "PIZZA001",
+    name: "Pizza Margherita",
+    sell_price_inc_tax: 12.99,
+    image: "/delicious-pizza.png",
+    category: "food",
+  },
+  {
+    id: 2,
+    sku: "BURGER001",
+    name: "Hamburguesa Clásica",
+    sell_price_inc_tax: 8.99,
+    image: "/classic-beef-burger.png",
+    category: "food",
+  },
+  {
+    id: 3,
+    sku: "SALAD001",
+    name: "Ensalada Mixta",
+    sell_price_inc_tax: 6.99,
+    image: "/vibrant-mixed-salad.png",
+    category: "food",
+  },
+  {
+    id: 4,
+    sku: "COFFEE001",
+    name: "Café Latte",
+    sell_price_inc_tax: 3.99,
+    image: "/latte-coffee.png",
+    category: "drinks",
+  },
+  {
+    id: 5,
+    sku: "COLA001",
+    name: "Cola Refrescante",
+    sell_price_inc_tax: 2.99,
+    image: "/refreshing-cola.png",
+    category: "drinks",
+  },
+  {
+    id: 6,
+    sku: "CAKE001",
+    name: "Tarta de Chocolate",
+    sell_price_inc_tax: 5.99,
+    image: "/chocolate-cake-slice.png",
+    category: "desserts",
+  },
+]
 
 interface WebConfig {
   heroTitle: string
@@ -105,11 +156,11 @@ export default function WebPage() {
     { id: "desserts", name: "Postres", emoji: "🍰" },
   ]
 
-  const filteredProducts = products.filter(
+  const filteredProducts = webProducts.filter(
     (product) => selectedCategory === "all" || product.category === selectedCategory,
   )
 
-  const featuredProducts = products.slice(0, 6)
+  const featuredProducts = webProducts.slice(0, 6)
 
   const handleCheckout = () => {
     router.push("/web-checkout")
@@ -218,16 +269,16 @@ export default function WebPage() {
                         <div className="flex flex-1 flex-col">
                           <div className="flex justify-between">
                             <h3 className="font-medium line-clamp-1">{item.name}</h3>
-                            <p className="font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                            <p className="font-medium">${(item.sell_price_inc_tax * item.quantity).toFixed(2)}</p>
                           </div>
-                          <p className="text-sm text-muted-foreground">${item.price.toFixed(2)} c/u</p>
+                          <p className="text-sm text-muted-foreground">${item.sell_price_inc_tax.toFixed(2)} c/u</p>
                           <div className="mt-auto flex items-center justify-between">
                             <div className="flex items-center">
                               <Button
                                 variant="outline"
                                 size="icon"
                                 className="h-7 w-7"
-                                onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                                onClick={() => updateQuantity(item.id!, item.quantity - 1)}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -236,7 +287,7 @@ export default function WebPage() {
                                 variant="outline"
                                 size="icon"
                                 className="h-7 w-7"
-                                onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                                onClick={() => updateQuantity(item.id!, item.quantity + 1)}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
@@ -245,7 +296,7 @@ export default function WebPage() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-red-500"
-                              onClick={() => removeFromCart(item.id)}
+                              onClick={() => removeFromCart(item.id!)}
                             >
                               <X className="h-4 w-4" />
                             </Button>
@@ -484,9 +535,9 @@ export default function WebPage() {
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <p className="text-2xl font-bold" style={{ color: config.primaryColor }}>
-                          ${product.price.toFixed(2)}
+                          ${product.sell_price_inc_tax.toFixed(2)}
                         </p>
-                        <p className="text-sm text-gray-500 line-through">$${(product.price * 1.2).toFixed(2)}</p>
+                        <p className="text-sm text-gray-500 line-through">$${(product.sell_price_inc_tax * 1.2).toFixed(2)}</p>
                       </div>
                       <Button
                         onClick={() => addToCart(product)}
@@ -605,7 +656,7 @@ export default function WebPage() {
                     <h3 className="font-bold text-gray-900 line-clamp-1">{product.name}</h3>
                     <div className="flex items-center justify-between">
                       <p className="text-lg font-bold" style={{ color: config.primaryColor }}>
-                        ${product.price.toFixed(2)}
+                        ${product.sell_price_inc_tax.toFixed(2)}
                       </p>
                       <Button
                         size="sm"

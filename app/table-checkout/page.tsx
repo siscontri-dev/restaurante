@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useTables } from "../context/table-context"
+import { useCart } from "../context/cart-context"
 
 interface TempOrder {
   tableId: number
@@ -17,13 +18,45 @@ interface TempOrder {
   total: number
 }
 
+// ID de cliente POS genérico, AJUSTA este valor según tu base de datos
+const CONTACT_ID_POS = 11405;
+
 export default function TableCheckoutPage() {
   const router = useRouter()
   const { completeTableOrder, clearTableOrder } = useTables()
+  const { cart, cartTotal, clearCart } = useCart()
   const [paymentMethod, setPaymentMethod] = useState("card")
   const [tempOrder, setTempOrder] = useState<TempOrder | null>(null)
+  const [fromCart, setFromCart] = useState(false)
 
   useEffect(() => {
+    // Forzar recarga del carrito si el contexto está vacío pero localStorage tiene productos
+    if (cart.length === 0) {
+      const savedCart = localStorage.getItem("cart")
+      if (savedCart) {
+        try {
+          const parsedCart = JSON.parse(savedCart)
+          if (Array.isArray(parsedCart) && parsedCart.length > 0) {
+            setFromCart(true)
+            setTempOrder({
+              tableId: 0,
+              tableNumber: 0,
+              items: parsedCart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.sell_price_inc_tax,
+                quantity: item.quantity,
+                image: item.image || ""
+              })),
+              total: parsedCart.reduce((total, item) => total + item.sell_price_inc_tax * item.quantity, 0)
+            })
+            return
+          }
+        } catch (e) { /* ignorar */ }
+      }
+    }
+    console.log('Contenido del carrito (cart):', cart)
+    console.log('Contenido de temp-checkout-order:', localStorage.getItem("temp-checkout-order"))
     const savedOrder = localStorage.getItem("temp-checkout-order")
     if (savedOrder) {
       try {
@@ -32,16 +65,34 @@ export default function TableCheckoutPage() {
         console.error("Error parsing temp order:", error)
         router.push("/tables")
       }
+    } else if (cart.length > 0) {
+      // Si no hay pedido de mesa pero sí hay carrito global, usarlo
+      setFromCart(true)
+      setTempOrder({
+        tableId: 0,
+        tableNumber: 0,
+        items: cart.map(item => ({
+          id: item.id!,
+          name: item.name,
+          price: item.sell_price_inc_tax,
+          quantity: item.quantity,
+          image: item.image || ""
+        })),
+        total: cartTotal
+      })
     } else {
-      router.push("/tables")
+      // Mostrar mensaje en vez de redirigir
+      setTempOrder(null)
     }
-  }, [router])
+  }, [router, cart, cartTotal])
 
   if (!tempOrder) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Cargando...</h1>
+          <h1 className="text-2xl font-bold">No hay productos en el carrito</h1>
+          <p className="mt-2 text-muted-foreground">Agrega productos en el POS antes de facturar.</p>
+          <Button className="mt-4" onClick={() => router.push("/pos")}>Ir al POS</Button>
         </div>
       </div>
     )
@@ -50,28 +101,119 @@ export default function TableCheckoutPage() {
   const tax = tempOrder.total * 0.1
   const grandTotal = tempOrder.total + tax
 
-  const handlePayment = () => {
-    // Complete the order
-    completeTableOrder(tempOrder.tableId)
+  const handlePayment = async () => {
+    try {
+      // Get current business location
+      const businessLocation = localStorage.getItem('selectedLocation')
+      if (!businessLocation) {
+        alert('Error: No se ha seleccionado una ubicación de negocio')
+        return
+      }
 
-    // Store receipt data
-    localStorage.setItem(
-      "table-receipt",
-      JSON.stringify({
-        ...tempOrder,
-        tax,
-        grandTotal,
-        paymentMethod,
-        receiptNumber: Math.floor(100000 + Math.random() * 900000),
-        date: new Date().toLocaleString(),
-      }),
-    )
+      const location = JSON.parse(businessLocation)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('Error: No se ha encontrado el token de autenticación')
+        return
+      }
 
-    // Clear temp order
-    localStorage.removeItem("temp-checkout-order")
+      // 1. Reserva y obtiene el número de factura ÚNICO
+      const reserveResponse = await fetch(`/api/invoice-number`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          location_id: location.id
+        }),
+      })
 
-    // Redirect to success page
-    router.push("/table-success")
+      if (!reserveResponse.ok) {
+        throw new Error('Error reservando número de factura')
+      }
+
+      const reserveData = await reserveResponse.json()
+
+      // 2. Create transaction in database
+      const transactionData = {
+        location_id: location.id,
+        contact_id: CONTACT_ID_POS, // Cliente genérico POS (ajusta este valor)
+        invoice_number: Number(reserveData.reserved_number),
+        prefix: reserveData.prefix || "POSE",
+        final_total: grandTotal,
+        custom_fields: { payment_method: paymentMethod },
+        res_table_id: tempOrder.tableId > 0 ? tempOrder.tableId : null,
+        items: tempOrder.items
+      }
+      // Validación y log
+      console.log('transactionData a enviar:', transactionData)
+      if (!transactionData.location_id || !transactionData.contact_id || transactionData.invoice_number === undefined || !transactionData.prefix || transactionData.final_total === undefined) {
+        alert('Faltan datos para la transacción: ' + JSON.stringify(transactionData))
+        return
+      }
+
+      const transactionResponse = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(transactionData),
+      })
+
+      if (!transactionResponse.ok) {
+        const errorData = await transactionResponse.json();
+        throw new Error('Error creando transacción en base de datos: ' + (errorData.error || ''))
+      }
+
+      const transactionResult = await transactionResponse.json()
+
+      // Registrar el pago en transaction_payments
+      await fetch('/api/transaction-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          transaction_id: transactionResult.id || transactionResult.transaction_id,
+          method: paymentMethod,
+          amount: grandTotal
+        })
+      })
+
+      // Complete the order
+      completeTableOrder(tempOrder.tableId)
+
+      // Store receipt data with real invoice number
+      localStorage.setItem(
+        "table-receipt",
+        JSON.stringify({
+          ...tempOrder,
+          tax,
+          grandTotal,
+          paymentMethod,
+          receiptNumber: `${reserveData.prefix}${reserveData.reserved_number}`,
+          date: new Date().toLocaleString(),
+          transactionId: transactionResult.id,
+        }),
+      )
+
+      // Clear temp order
+      localStorage.removeItem("temp-checkout-order")
+      // Limpiar carrito global si es pedido POS
+      if (fromCart) {
+        clearCart()
+      }
+
+      // Redirect to success page
+      router.push("/table-success")
+
+    } catch (error) {
+      console.error('Error processing payment:', error)
+      alert(`Error procesando el pago: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    }
   }
 
   return (
@@ -85,7 +227,11 @@ export default function TableCheckoutPage() {
         <Receipt className="h-8 w-8" />
         <div>
           <h1 className="text-3xl font-bold">Facturación</h1>
-          <p className="text-muted-foreground">Mesa {tempOrder.tableNumber}</p>
+          {fromCart ? (
+            <p className="text-muted-foreground">Pedido POS (sin mesa)</p>
+          ) : (
+            <p className="text-muted-foreground">Mesa {tempOrder.tableNumber}</p>
+          )}
         </div>
       </div>
 
@@ -103,10 +249,10 @@ export default function TableCheckoutPage() {
                 <div className="flex-1">
                   <p className="font-medium">{item.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    ${item.price.toFixed(2)} × {item.quantity}
+                    ${(Number(item.price) || 0).toFixed(2)} × {item.quantity}
                   </p>
                 </div>
-                <p className="font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-medium">${((Number(item.price) || 0) * item.quantity).toFixed(2)}</p>
               </div>
             ))}
 

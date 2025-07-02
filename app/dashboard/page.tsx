@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   LayoutDashboard,
@@ -16,23 +16,53 @@ import {
   ShoppingCart,
   MapPin,
   Clock,
+  Database,
+  BarChart,
+  FileText,
+  ChefHat,
+  Package,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useTables } from "../context/table-context"
-import { products } from "../data/products"
+import { jwtDecode } from "jwt-decode"
+import ProductManagement from "../components/product-management"
+import Link from "next/link"
 
 export default function DashboardPage() {
   const router = useRouter()
   const { tables } = useTables()
   const [activeTab, setActiveTab] = useState("overview")
 
+  useEffect(() => {
+    // Verificar JWT en localStorage
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+    if (!token) {
+      router.replace("/login")
+      return
+    }
+    try {
+      // Decodificar y validar expiración
+      const decoded: any = jwtDecode(token)
+      if (!decoded.user_id || !decoded.business_id) {
+        throw new Error("Token inválido")
+      }
+      if (decoded.exp && Date.now() >= decoded.exp * 1000) {
+        localStorage.removeItem("token")
+        router.replace("/login")
+      }
+    } catch (err) {
+      localStorage.removeItem("token")
+      router.replace("/login")
+    }
+  }, [router])
+
   // Statistics
   const totalTables = tables.length
   const occupiedTables = tables.filter((t) => t.status === "occupied").length
-  const totalProducts = products.length
+  const totalProducts = 0 // Se obtendrá de la base de datos
   const onlineOrders = 12 // Mock data
 
   const stats = [
@@ -140,7 +170,7 @@ export default function DashboardPage() {
                 <CardTitle>Acciones Rápidas</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                   <Button
                     className="h-20 flex flex-col gap-2 bg-orange-500 hover:bg-orange-600 text-white"
                     onClick={() => router.push("/pos")}
@@ -157,7 +187,7 @@ export default function DashboardPage() {
                     variant="outline"
                     onClick={() => router.push("/kitchen")}
                   >
-                    <UtensilsCrossed className="h-6 w-6" />
+                    <ChefHat className="h-6 w-6" />
                     Ver Comandas
                   </Button>
                   <Button
@@ -167,6 +197,38 @@ export default function DashboardPage() {
                   >
                     <Globe className="h-6 w-6" />
                     Configurar Web
+                  </Button>
+                  <Button
+                    className="h-20 flex flex-col gap-2"
+                    variant="outline"
+                    onClick={() => router.push("/test-database")}
+                  >
+                    <Database className="h-6 w-6" />
+                    Probar BD
+                  </Button>
+                  <Button
+                    className="h-20 flex flex-col gap-2"
+                    variant="outline"
+                    onClick={() => router.push("/products")}
+                  >
+                    <Package className="h-6 w-6" />
+                    Gestionar Productos
+                  </Button>
+                  <Button
+                    className="h-20 flex flex-col gap-2"
+                    variant="outline"
+                    onClick={() => router.push("/clients")}
+                  >
+                    <Users className="h-6 w-6" />
+                    Gestionar Clientes
+                  </Button>
+                  <Button
+                    className="h-20 flex flex-col gap-2"
+                    variant="outline"
+                    onClick={() => router.push("/area-orders")}
+                  >
+                    <Settings className="h-6 w-6" />
+                    Gestión de Áreas
                   </Button>
                 </div>
               </CardContent>
@@ -283,44 +345,7 @@ export default function DashboardPage() {
 
           {/* Products Tab */}
           <TabsContent value="products" className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Gestión de Productos</h2>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Agregar Producto
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {products.slice(0, 8).map((product) => (
-                <Card key={product.id}>
-                  <CardContent className="p-4">
-                    <img
-                      src={product.image || "/placeholder.svg"}
-                      alt={product.name}
-                      className="w-full h-32 object-cover rounded mb-3"
-                    />
-                    <h3 className="font-semibold mb-1">{product.name}</h3>
-                    <p className="text-lg font-bold text-green-600 mb-2">${product.price.toFixed(2)}</p>
-                    <Badge variant="outline" className="mb-3">
-                      {product.category === "food" ? "Comida" : product.category === "drinks" ? "Bebidas" : "Postres"}
-                    </Badge>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline">
-                        <Edit className="h-3 w-3" />
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="text-center">
-              <Button variant="outline">Ver Todos los Productos ({products.length})</Button>
-            </div>
+            <ProductManagement />
           </TabsContent>
 
           {/* Website Tab */}

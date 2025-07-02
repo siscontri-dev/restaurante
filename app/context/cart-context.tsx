@@ -3,12 +3,17 @@
 import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
 
 export interface Product {
-  id: number
+  id?: number
+  sku: string
   name: string
-  price: number
-  image: string
-  category: string
-  preparationArea: "kitchen" | "cafeteria" | "bar" // Área de preparación
+  sell_price_inc_tax: number
+  image: string | null
+  category?: string
+  preparationArea?: string
+  active?: boolean
+  createdAt?: Date
+  updatedAt?: Date
+  order_area_id?: number | null
 }
 
 interface CartItem extends Product {
@@ -76,7 +81,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setCart([])
   }
 
-  const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0)
+  const cartTotal = cart.reduce((total, item) => total + item.sell_price_inc_tax * item.quantity, 0)
 
   const itemCount = cart.reduce((count, item) => count + item.quantity, 0)
 

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useTables } from "../context/table-context"
 
 interface SplitReceiptsData {
   tableId: number
@@ -17,7 +18,7 @@ interface SplitReceiptsData {
     personName: string
     items: Array<{
       productId: number
-      product: { name: string; price: number }
+      product: { name: string; sell_price_inc_tax: number }
       quantity: number
       isShared: boolean
     }>
@@ -33,6 +34,7 @@ interface SplitReceiptsData {
 
 export default function SplitSuccessPage() {
   const router = useRouter()
+  const { clearTableOrder } = useTables()
   const [receiptsData, setReceiptsData] = useState<SplitReceiptsData | null>(null)
 
   useEffect(() => {
@@ -50,8 +52,12 @@ export default function SplitSuccessPage() {
   }, [router])
 
   const handleBackToTables = () => {
+    if (receiptsData) {
+      clearTableOrder(receiptsData.tableId)
+    }
     localStorage.removeItem("split-receipts")
-    router.push("/tables")
+    // Forzar actualización inmediata
+    window.location.href = "/tables"
   }
 
   const handlePrint = () => {
@@ -118,7 +124,7 @@ export default function SplitSuccessPage() {
                           </Badge>
                         )}
                       </span>
-                      <span>${(item.product.price * item.quantity).toFixed(2)}</span>
+                      <span>${(item.product.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>

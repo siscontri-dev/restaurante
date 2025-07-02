@@ -20,7 +20,7 @@ interface SplitBillsData {
 
 export default function SplitCheckoutPage() {
   const router = useRouter()
-  const { completeTableOrder } = useTables()
+  const { clearTableOrder } = useTables()
   const [splitBillsData, setSplitBillsData] = useState<SplitBillsData | null>(null)
   const [paidBills, setPaidBills] = useState<Set<string>>(new Set())
   const [paymentMethods, setPaymentMethods] = useState<Record<string, string>>({})
@@ -56,8 +56,89 @@ export default function SplitCheckoutPage() {
     )
   }
 
-  const handlePayBill = (billId: string) => {
-    setPaidBills((prev) => new Set([...prev, billId]))
+  const handlePayBill = async (billId: string) => {
+    const bill = splitBillsData?.bills.find(b => b.id === billId)
+    if (!bill) return
+
+    const paymentMethod = paymentMethods[billId]
+    const token = localStorage.getItem('token')
+    
+    if (!token) {
+      console.error('No se encontró token de autenticación')
+      return
+    }
+
+    // Obtener datos necesarios para la transacción
+    const selectedLocation = localStorage.getItem('selectedLocation')
+    if (!selectedLocation) {
+      console.error('No se encontró ubicación seleccionada')
+      return
+    }
+
+    const location = JSON.parse(selectedLocation)
+    
+    try {
+      // Obtener cliente predeterminado
+      const clientResponse = await fetch('/api/clients?default=1', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      
+      if (!clientResponse.ok) {
+        console.error('Error al obtener cliente predeterminado')
+        return
+      }
+      
+      const clients = await clientResponse.json()
+      if (!Array.isArray(clients) || clients.length === 0) {
+        console.error('No se encontró cliente predeterminado')
+        return
+      }
+      
+      const defaultClient = clients[0]
+
+      // Reservar número de factura
+      const invoiceResponse = await fetch('/api/invoice-number', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ location_id: location.id })
+      })
+
+      if (!invoiceResponse.ok) {
+        console.error('Error al reservar número de factura')
+        return
+      }
+
+      const invoiceData = await invoiceResponse.json()
+
+      // Crear transacción con todos los campos requeridos
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          location_id: location.id,
+          contact_id: defaultClient.id,
+          invoice_number: invoiceData.reserved_number,
+          prefix: invoiceData.full_invoice_number.replace(invoiceData.reserved_number.toString(), ''),
+          final_total: bill.total,
+          res_table_id: splitBillsData.tableId
+        }),
+      })
+
+      if (response.ok) {
+        setPaidBills((prev) => new Set([...prev, billId]))
+      } else {
+        const errorData = await response.text()
+        console.error('Error creating transaction:', response.status, errorData)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    }
   }
 
   const handlePaymentMethodChange = (billId: string, method: string) => {
@@ -65,9 +146,6 @@ export default function SplitCheckoutPage() {
   }
 
   const handleCompleteAllPayments = () => {
-    // Complete the table order
-    completeTableOrder(splitBillsData.tableId)
-
     // Store receipt data for all bills
     localStorage.setItem(
       "split-receipts",
@@ -83,8 +161,11 @@ export default function SplitCheckoutPage() {
     // Clear temp data
     localStorage.removeItem("split-bills-checkout")
 
-    // Redirect to success page
-    router.push("/split-success")
+    // Clear the table order completely
+    clearTableOrder(splitBillsData.tableId)
+
+    // Redirect to success page with forced reload
+    window.location.href = "/split-success"
   }
 
   const allBillsPaid = splitBillsData.bills.every((bill) => paidBills.has(bill.id))
@@ -111,6 +192,43 @@ export default function SplitCheckoutPage() {
         {/* Individual Bills */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Cuentas Individuales</h2>
+          
+          {/* Resumen del Pedido Completo */}
+          <Card className="border-blue-200 bg-blue-50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-blue-800">Resumen del Pedido Completo</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-sm space-y-1">
+                {splitBillsData.bills.flatMap(bill => bill.items).reduce((acc, item) => {
+                  const existingItem = acc.find(i => i.productId === item.productId && !i.isShared)
+                  if (existingItem) {
+                    existingItem.quantity += item.quantity
+                  } else {
+                    acc.push({ ...item })
+                  }
+                  return acc
+                }, [] as any[]).map((item, index) => (
+                  <div key={index} className="flex justify-between">
+                    <span className="flex items-center gap-1">
+                      {item.quantity}x {item.product.name}
+                      {item.isShared && (
+                        <Badge variant="outline" className="text-xs">
+                          Compartido
+                        </Badge>
+                      )}
+                    </span>
+                    <span>${(item.product.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <Separator />
+              <div className="flex justify-between font-bold text-blue-800">
+                <span>Total del Pedido:</span>
+                <span>${totalAmount.toFixed(2)}</span>
+              </div>
+            </CardContent>
+          </Card>
           {splitBillsData.bills.map((bill) => {
             const isPaid = paidBills.has(bill.id)
             return (
@@ -122,31 +240,41 @@ export default function SplitCheckoutPage() {
                       {bill.personName}
                       {isPaid && <Check className="h-4 w-4 text-green-600" />}
                     </div>
-                    <Badge variant={isPaid ? "default" : "outline"} className={isPaid ? "bg-green-600" : ""}>
-                      {isPaid ? "Pagado" : "Pendiente"}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      {isPaid && (
+                        <Badge variant="outline" className="text-xs">
+                          {paymentMethods[bill.id] === "card" ? "Tarjeta" : 
+                           paymentMethods[bill.id] === "cash" ? "Efectivo" :
+                           paymentMethods[bill.id] === "nequi" ? "Nequi" :
+                           paymentMethods[bill.id] === "bancolombia" ? "Bancolombia" :
+                           paymentMethods[bill.id] === "daviplata" ? "Daviplata" :
+                           paymentMethods[bill.id] === "transferencia" ? "Transferencia" :
+                           paymentMethods[bill.id] === "addi" ? "Addi" :
+                           paymentMethods[bill.id] === "sistecredito" ? "Sistecredito" : "Otro"}
+                        </Badge>
+                      )}
+                      <Badge variant={isPaid ? "default" : "outline"} className={isPaid ? "bg-green-600" : ""}>
+                        {isPaid ? "Pagado" : "Pendiente"}
+                      </Badge>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Items */}
+                  {/* Listado de productos de la persona */}
                   <div className="space-y-1">
-                    {bill.items.map((item) => (
-                      <div key={`${item.productId}-${bill.id}`} className="flex justify-between text-sm">
+                    {bill.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between text-sm">
                         <span className="flex items-center gap-1">
                           {item.quantity}x {item.product.name}
                           {item.isShared && (
-                            <Badge variant="outline" className="text-xs">
-                              Compartido
-                            </Badge>
+                            <Badge variant="outline" className="text-xs">Compartido</Badge>
                           )}
                         </span>
-                        <span>${(item.product.price * item.quantity).toFixed(2)}</span>
+                        <span>${(item.product.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
-
                   <Separator />
-
                   {/* Totals */}
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
@@ -162,7 +290,6 @@ export default function SplitCheckoutPage() {
                       <span>${bill.total.toFixed(2)}</span>
                     </div>
                   </div>
-
                   {!isPaid && (
                     <>
                       <Separator />
@@ -231,7 +358,6 @@ export default function SplitCheckoutPage() {
                           </div>
                         </RadioGroup>
                       </div>
-
                       <Button className="w-full" onClick={() => handlePayBill(bill.id)}>
                         Pagar ${bill.total.toFixed(2)}
                       </Button>
@@ -283,6 +409,33 @@ export default function SplitCheckoutPage() {
                       .toFixed(2)}
                   </span>
                 </div>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Monto pendiente:</span>
+                  <span>
+                    $
+                    {splitBillsData.bills
+                      .filter((bill) => !paidBills.has(bill.id))
+                      .reduce((sum, bill) => sum + bill.total, 0)
+                      .toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Detalles por persona */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Detalles por Persona:</h4>
+                {splitBillsData.bills.map((bill) => (
+                  <div key={bill.id} className="flex justify-between text-sm">
+                    <span className={paidBills.has(bill.id) ? "text-green-600" : "text-red-600"}>
+                      {bill.personName}
+                    </span>
+                    <span className={paidBills.has(bill.id) ? "text-green-600" : "text-red-600"}>
+                      ${bill.total.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <Button className="w-full" size="lg" onClick={handleCompleteAllPayments} disabled={!allBillsPaid}>

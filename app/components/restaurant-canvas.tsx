@@ -19,9 +19,12 @@ import NewTableDialog from "./new-table-dialog"
 
 interface RestaurantCanvasProps {
   onTableSelect?: (table: Table) => void
+  resTables?: Array<{ id: number; name: string; location_id: number; [key: string]: any }>
 }
 
-export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProps) {
+export default function RestaurantCanvas({ onTableSelect, resTables }: RestaurantCanvasProps) {
+  console.log('RestaurantCanvas - resTables recibidas:', resTables)
+  
   const {
     tables,
     updateTableStatus,
@@ -46,14 +49,26 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
     }
   }
 
+  // Actualizar selectedTable cuando cambien las tables
+  const currentSelectedTable = selectedTable ? tables.find(t => t.id === selectedTable.id) : null
+
   const handleCheckoutTable = (table: Table) => {
     if (table.currentOrder && table.currentOrder.items.length > 0) {
+      // Mapear los items para que tengan la estructura correcta para el checkout
+      const mappedItems = table.currentOrder.items.map(item => ({
+        id: item.id || 0,
+        name: item.name,
+        price: Number(item.sell_price_inc_tax) || 0,
+        quantity: item.quantity,
+        image: item.image || ""
+      }))
+      
       localStorage.setItem(
         "temp-checkout-order",
         JSON.stringify({
           tableId: table.id,
           tableNumber: table.number,
-          items: table.currentOrder.items,
+          items: mappedItems,
           total: table.currentOrder.total,
         }),
       )
@@ -92,7 +107,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
   const hasPendingTickets = (table: Table) => {
     if (!table.currentOrder || !table.currentOrder.items.length) return false
 
-    const areas = new Set(table.currentOrder.items.map((item) => item.preparationArea))
+    const areas = new Set(table.currentOrder.items.map((item) => item.preparationArea || 'general'))
     const printedAreas = new Set(table.currentOrder.printedAreas || [])
 
     return Array.from(areas).some((area) => !printedAreas.has(area))
@@ -178,7 +193,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
               }}
             />
 
-            {/* Tables */}
+            {/* Tables from context (original) - always show these for drag & drop functionality */}
             {tables.map((table) => (
               <DraggableTable
                 key={table.id}
@@ -204,34 +219,34 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
       </div>
 
       {/* Table Info Panel */}
-      {selectedTable && (
+      {currentSelectedTable && (
         <div className="w-96 border-l bg-background p-4 overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between">
-                Mesa {selectedTable.number}
+                {currentSelectedTable.name}
                 <div className="flex gap-2">
                   <Badge
                     variant="secondary"
                     className={
-                      selectedTable.status === "available"
+                      currentSelectedTable.status === "available"
                         ? "bg-green-100 text-green-800"
-                        : selectedTable.status === "occupied"
+                        : currentSelectedTable.status === "occupied"
                           ? "bg-red-100 text-red-800"
-                          : selectedTable.status === "reserved"
+                          : currentSelectedTable.status === "reserved"
                             ? "bg-yellow-100 text-yellow-800"
                             : "bg-gray-100 text-gray-800"
                     }
                   >
-                    {selectedTable.status === "available"
+                    {currentSelectedTable.status === "available"
                       ? "Libre"
-                      : selectedTable.status === "occupied"
+                      : currentSelectedTable.status === "occupied"
                         ? "Ocupada"
-                        : selectedTable.status === "reserved"
+                        : currentSelectedTable.status === "reserved"
                           ? "Reservada"
                           : "Necesita Limpieza"}
                   </Badge>
-                  {isSplitBill(selectedTable) && (
+                  {isSplitBill(currentSelectedTable) && (
                     <Badge variant="outline" className="bg-purple-50 text-purple-700">
                       Cuenta Dividida
                     </Badge>
@@ -239,7 +254,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                 </div>
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                {selectedTable.seats} asientos • {selectedTable.shape === "rectangle" ? "Rectangular" : "Circular"}
+                {currentSelectedTable.seats} asientos • {currentSelectedTable.shape === "rectangle" ? "Rectangular" : "Circular"}
               </p>
             </CardHeader>
             <CardContent className="pt-0">
@@ -248,7 +263,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                   <TabsTrigger value="order">Pedido</TabsTrigger>
                   <TabsTrigger value="tickets" className="relative">
                     Comandas
-                    {hasPendingTickets(selectedTable) && (
+                    {hasPendingTickets(currentSelectedTable) && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
                         !
                       </span>
@@ -256,7 +271,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                   </TabsTrigger>
                   <TabsTrigger value="split" className="relative">
                     Dividir
-                    {isSplitBill(selectedTable) && (
+                    {currentSelectedTable && isSplitBill(currentSelectedTable) && (
                       <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
                         ✓
                       </span>
@@ -265,17 +280,17 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                 </TabsList>
                 <TabsContent value="order" className="mt-4 space-y-4">
                   {/* Current Order */}
-                  {selectedTable.currentOrder && selectedTable.currentOrder.items.length > 0 ? (
+                  {currentSelectedTable.currentOrder && currentSelectedTable.currentOrder.items.length > 0 ? (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm font-medium">Pedido Actual</p>
                         <Badge variant="outline">
-                          {selectedTable.currentOrder.items.reduce((sum, item) => sum + item.quantity, 0)} items
+                          {currentSelectedTable.currentOrder.items.reduce((sum, item) => sum + item.quantity, 0)} items
                         </Badge>
                       </div>
 
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {selectedTable.currentOrder.items.map((item) => (
+                        {currentSelectedTable.currentOrder.items.map((item) => (
                           <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
                             <img
                               src={item.image || "/placeholder.svg"}
@@ -284,16 +299,17 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                             />
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{item.name}</p>
-                              <p className="text-xs text-muted-foreground">${item.price.toFixed(2)} c/u</p>
+                              <p className="text-xs text-muted-foreground">${Number(item.sell_price_inc_tax).toFixed(2)} c/u</p>
                             </div>
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="outline"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() =>
-                                  updateProductQuantityInTable(selectedTable.id, item.id, item.quantity - 1)
-                                }
+                                onClick={() => {
+                                  console.log('Decreasing quantity for item:', item.id, 'current:', item.quantity)
+                                  updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity - 1)
+                                }}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -302,9 +318,10 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                                 variant="outline"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() =>
-                                  updateProductQuantityInTable(selectedTable.id, item.id, item.quantity + 1)
-                                }
+                                onClick={() => {
+                                  console.log('Increasing quantity for item:', item.id, 'current:', item.quantity)
+                                  updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity + 1)
+                                }}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
@@ -312,7 +329,7 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6 text-red-500"
-                                onClick={() => removeProductFromTable(selectedTable.id, item.id)}
+                                onClick={() => removeProductFromTable(currentSelectedTable.id, item.id!)}
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
@@ -325,19 +342,19 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
 
                       <div className="flex justify-between items-center font-bold">
                         <span>Total:</span>
-                        <span>${selectedTable.currentOrder.total.toFixed(2)}</span>
+                        <span>${Number(currentSelectedTable.currentOrder.total || 0).toFixed(2)}</span>
                       </div>
 
                       <div className="flex gap-2 mt-4">
                         <Button
                           className="flex-1"
-                          onClick={() => handleCheckoutTable(selectedTable)}
-                          disabled={isSplitBill(selectedTable)}
+                          onClick={() => currentSelectedTable && handleCheckoutTable(currentSelectedTable)}
+                          disabled={!currentSelectedTable || isSplitBill(currentSelectedTable)}
                         >
                           <Receipt className="h-4 w-4 mr-2" />
-                          {isSplitBill(selectedTable) ? "Cuenta Dividida" : "Facturar"}
+                          {currentSelectedTable && isSplitBill(currentSelectedTable) ? "Cuenta Dividida" : "Facturar"}
                         </Button>
-                        <Button variant="outline" onClick={() => clearTableOrder(selectedTable.id)}>
+                        <Button variant="outline" onClick={() => currentSelectedTable && clearTableOrder(currentSelectedTable.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -354,23 +371,23 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                     <p className="text-sm text-muted-foreground">Cambiar Estado</p>
                     <div className="grid grid-cols-2 gap-2">
                       <Button
-                        variant={selectedTable.status === "available" ? "default" : "outline"}
+                        variant={currentSelectedTable?.status === "available" ? "default" : "outline"}
                         size="sm"
-                        onClick={() => updateTableStatus(selectedTable.id, "available")}
+                        onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "available")}
                       >
                         Libre
                       </Button>
                       <Button
-                        variant={selectedTable.status === "reserved" ? "default" : "outline"}
+                        variant={currentSelectedTable?.status === "reserved" ? "default" : "outline"}
                         size="sm"
-                        onClick={() => updateTableStatus(selectedTable.id, "reserved")}
+                        onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "reserved")}
                       >
                         Reservada
                       </Button>
                       <Button
-                        variant={selectedTable.status === "needs-cleaning" ? "default" : "outline"}
+                        variant={currentSelectedTable?.status === "needs-cleaning" ? "default" : "outline"}
                         size="sm"
-                        onClick={() => updateTableStatus(selectedTable.id, "needs-cleaning")}
+                        onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "needs-cleaning")}
                         className="col-span-2"
                       >
                         Necesita Limpieza
@@ -390,8 +407,8 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                       <Button
                         size="sm"
                         onClick={() => {
-                          if (waiterName.trim()) {
-                            assignWaiterToTable(selectedTable.id, waiterName.trim())
+                          if (waiterName.trim() && currentSelectedTable) {
+                            assignWaiterToTable(currentSelectedTable.id, waiterName.trim())
                             setWaiterName("")
                           }
                         }}
@@ -400,19 +417,19 @@ export default function RestaurantCanvas({ onTableSelect }: RestaurantCanvasProp
                         Asignar
                       </Button>
                     </div>
-                    {selectedTable.assignedWaiter && (
+                    {currentSelectedTable?.assignedWaiter && (
                       <div className="flex items-center gap-2 text-sm">
                         <User className="h-4 w-4" />
-                        <span>Mesero: {selectedTable.assignedWaiter}</span>
+                        <span>Mesero: {currentSelectedTable.assignedWaiter}</span>
                       </div>
                     )}
                   </div>
                 </TabsContent>
                 <TabsContent value="tickets" className="mt-4">
-                  <OrderTickets table={selectedTable} />
+                  {currentSelectedTable && <OrderTickets table={currentSelectedTable} />}
                 </TabsContent>
                 <TabsContent value="split" className="mt-4">
-                  <SplitBill table={selectedTable} />
+                  {currentSelectedTable && <SplitBill table={currentSelectedTable} />}
                 </TabsContent>
               </Tabs>
             </CardContent>

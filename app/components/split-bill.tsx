@@ -51,10 +51,12 @@ export default function SplitBill({ table }: SplitBillProps) {
     // Inicializar selecciones de productos
     const initialSelections: Record<number, ProductSelection> = {}
     currentTable.currentOrder?.items.forEach((item) => {
-      initialSelections[item.id] = {
-        productId: item.id,
-        selected: false,
-        assignedTo: [],
+      if (item.id) {
+        initialSelections[item.id] = {
+          productId: item.id,
+          selected: false,
+          assignedTo: [],
+        }
       }
     })
     setProductSelections(initialSelections)
@@ -112,7 +114,17 @@ export default function SplitBill({ table }: SplitBillProps) {
       }
     })
 
-    handleCheckoutSplit()
+    // Polling para esperar a que los productos estén realmente asignados en los bills
+    const checkBillsReady = () => {
+      const bills = finalizeSplitBills(table.id)
+      const anyHasItems = bills.some(bill => bill.items && bill.items.length > 0)
+      if (anyHasItems) {
+        handleCheckoutSplit()
+      } else {
+        setTimeout(checkBillsReady, 30)
+      }
+    }
+    checkBillsReady()
   }
 
   const handleCheckoutSplit = () => {
@@ -206,6 +218,7 @@ export default function SplitBill({ table }: SplitBillProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 {currentTable.currentOrder.items.map((item) => {
+                  if (!item.id) return null
                   const selection = productSelections[item.id] || {
                     productId: item.id,
                     selected: false,
@@ -217,7 +230,7 @@ export default function SplitBill({ table }: SplitBillProps) {
                       <div className="flex items-center gap-3 mb-3">
                         <Checkbox
                           checked={selection.selected}
-                          onCheckedChange={(checked) => handleProductSelection(item.id, checked as boolean)}
+                          onCheckedChange={(checked) => handleProductSelection(item.id!, checked as boolean)}
                         />
                         <img
                           src={item.image || "/placeholder.svg"}
@@ -227,7 +240,7 @@ export default function SplitBill({ table }: SplitBillProps) {
                         <div className="flex-1">
                           <h4 className="font-medium">{item.name}</h4>
                           <p className="text-sm text-muted-foreground">
-                            ${item.price.toFixed(2)} × {item.quantity} = ${(item.price * item.quantity).toFixed(2)}
+                            ${(Number(item.sell_price_inc_tax) || 0).toFixed(2)} × {item.quantity} = ${((Number(item.sell_price_inc_tax) || 0) * item.quantity).toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -241,7 +254,7 @@ export default function SplitBill({ table }: SplitBillProps) {
                                 <Checkbox
                                   checked={selection.assignedTo.includes(bill.id)}
                                   onCheckedChange={(checked) =>
-                                    handlePersonAssignment(item.id, bill.id, checked as boolean)
+                                    handlePersonAssignment(item.id!, bill.id, checked as boolean)
                                   }
                                 />
                                 <span className="text-sm">{bill.personName}</span>

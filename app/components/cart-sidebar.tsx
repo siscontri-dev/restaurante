@@ -11,7 +11,7 @@ export default function CartSidebar() {
   const { cart, removeFromCart, updateQuantity, cartTotal, itemCount } = useCart()
 
   const handleCheckout = () => {
-    router.push("/checkout")
+    router.push("/table-checkout")
   }
 
   return (
@@ -43,16 +43,16 @@ export default function CartSidebar() {
                 <div className="flex flex-1 flex-col">
                   <div className="flex justify-between">
                     <h3 className="font-medium line-clamp-1">{item.name}</h3>
-                    <p className="font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="font-medium">${(Number(item.sell_price_inc_tax) * item.quantity).toFixed(2)}</p>
                   </div>
-                  <p className="text-sm text-muted-foreground">${item.price.toFixed(2)} each</p>
+                  <p className="text-sm text-muted-foreground">${Number(item.sell_price_inc_tax).toFixed(2)} each</p>
                   <div className="mt-auto flex items-center justify-between">
                     <div className="flex items-center">
                       <Button
                         variant="outline"
                         size="icon"
                         className="h-7 w-7"
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.id!, item.quantity - 1)}
                       >
                         <Minus className="h-3 w-3" />
                       </Button>
@@ -61,7 +61,7 @@ export default function CartSidebar() {
                         variant="outline"
                         size="icon"
                         className="h-7 w-7"
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.id!, item.quantity + 1)}
                       >
                         <Plus className="h-3 w-3" />
                       </Button>
@@ -70,7 +70,7 @@ export default function CartSidebar() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground"
-                      onClick={() => removeFromCart(item.id)}
+                      onClick={() => removeFromCart(item.id!)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

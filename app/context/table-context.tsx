@@ -43,6 +43,7 @@ export interface TableOrder {
 export interface Table {
   id: number
   number: number
+  name: string
   x: number
   y: number
   width: number
@@ -61,6 +62,11 @@ export interface Table {
     section?: string
     notes?: string
   }
+}
+
+// Definición extendida local de Product para mesas
+interface MesaProduct extends Product {
+  order_area_id?: number | null
 }
 
 interface TableContextType {
@@ -86,241 +92,59 @@ interface TableContextType {
   calculateBillForPerson: (tableId: number, personId: string) => { subtotal: number; tax: number; total: number }
   finalizeSplitBills: (tableId: number) => Bill[]
   createOnlineOrder: (customerInfo: any, items: any[], total: number) => void
-  // Nuevas funciones para simular base de datos
-  saveTableToDatabase: (table: Table) => Promise<boolean>
-  getTableFromDatabase: (id: number) => Promise<Table | null>
-  getAllTablesFromDatabase: () => Promise<Table[]>
-  updateTableInDatabase: (id: number, updates: Partial<Table>) => Promise<boolean>
-  deleteTableFromDatabase: (id: number) => Promise<boolean>
 }
 
 const TableContext = createContext<TableContextType | undefined>(undefined)
 
-const defaultTables: Table[] = [
-  {
-    id: 1,
-    number: 1,
-    x: 100,
-    y: 100,
-    width: 120,
-    height: 80,
-    seats: 4,
-    status: "available",
-    shape: "rectangle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "Principal", location: "Ventana" },
-  },
-  {
-    id: 2,
-    number: 2,
-    x: 300,
-    y: 100,
-    width: 120,
-    height: 80,
-    seats: 4,
-    status: "available",
-    shape: "rectangle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "Principal", location: "Centro" },
-  },
-  {
-    id: 3,
-    number: 3,
-    x: 500,
-    y: 100,
-    width: 100,
-    height: 100,
-    seats: 6,
-    status: "available",
-    shape: "circle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "VIP", location: "Esquina" },
-  },
-  {
-    id: 4,
-    number: 4,
-    x: 100,
-    y: 250,
-    width: 120,
-    height: 80,
-    seats: 4,
-    status: "available",
-    shape: "rectangle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "Principal", location: "Pared" },
-  },
-  {
-    id: 5,
-    number: 5,
-    x: 300,
-    y: 250,
-    width: 160,
-    height: 80,
-    seats: 6,
-    status: "available",
-    shape: "rectangle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "Familiar", location: "Centro" },
-  },
-  {
-    id: 6,
-    number: 6,
-    x: 500,
-    y: 250,
-    width: 100,
-    height: 100,
-    seats: 4,
-    status: "available",
-    shape: "circle",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-    metadata: { section: "Terraza", location: "Exterior" },
-  },
-]
-
 export function TableProvider({ children }: { children: ReactNode }) {
-  const [tables, setTables] = useState<Table[]>(defaultTables)
+  const [tables, setTables] = useState<Table[]>([])
 
-  // Simular carga desde base de datos
   useEffect(() => {
-    const loadTablesFromStorage = async () => {
-      const savedTables = localStorage.getItem("restaurant-tables-db")
-      if (savedTables) {
-        try {
-          const parsedTables = JSON.parse(savedTables)
-          const tablesWithDates = parsedTables.map((table: Table) => ({
-            ...table,
-            createdAt: new Date(table.createdAt || Date.now()),
-            updatedAt: new Date(table.updatedAt || Date.now()),
-            currentOrder: table.currentOrder
-              ? {
-                  ...table.currentOrder,
-                  createdAt: new Date(table.currentOrder.createdAt),
-                }
-              : undefined,
-          }))
-          setTables(tablesWithDates)
-          console.log("✅ Tables loaded from database simulation:", tablesWithDates.length)
-        } catch (error) {
-          console.error("❌ Failed to parse tables from database:", error)
-        }
-      } else {
-        // Inicializar con datos por defecto
-        await saveAllTablesToDatabase(defaultTables)
+    // Cargar mesas desde la base de datos
+    async function fetchTables() {
+      try {
+        const token = localStorage.getItem('token')
+        const selectedLocation = JSON.parse(localStorage.getItem('selectedLocation') || '{}')
+        const locationId = selectedLocation.location_id || selectedLocation.id
+        const res = await fetch(`/api/res-tables?location_id=${locationId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        const data = await res.json()
+        // Mapear para que cada mesa tenga al menos id y number (usando name como number si es necesario)
+        const mappedTables = (data.tables || []).map((t: any, index: number) => ({
+          id: t.id,
+          number: t.name || t.number || t.id,
+          name: t.name || t.number || t.id,
+          x: 50 + (index * 120) % 600,
+          y: 50 + Math.floor(index / 5) * 120,
+          width: 100,
+          height: 100,
+          seats: 4,
+          status: "available" as const,
+          shape: "rectangle" as const
+        }))
+        setTables(mappedTables)
+      } catch (error) {
+        console.error('Error cargando mesas desde la base de datos:', error)
       }
     }
-
-    loadTablesFromStorage()
+    fetchTables()
   }, [])
 
-  // Simular guardado en base de datos
-  const saveAllTablesToDatabase = async (tablesToSave: Table[]) => {
-    try {
-      localStorage.setItem("restaurant-tables-db", JSON.stringify(tablesToSave))
-      console.log("💾 All tables saved to database simulation")
-      return true
-    } catch (error) {
-      console.error("❌ Failed to save tables to database:", error)
-      return false
-    }
-  }
-
-  // Guardar automáticamente cuando cambien las mesas
-  useEffect(() => {
-    if (tables.length > 0) {
-      saveAllTablesToDatabase(tables)
-    }
-  }, [tables])
-
-  // Funciones de simulación de base de datos
-  const saveTableToDatabase = async (table: Table): Promise<boolean> => {
-    try {
-      const updatedTable = {
-        ...table,
-        updatedAt: new Date(),
-      }
-
-      setTables((prevTables) => {
-        const existingIndex = prevTables.findIndex((t) => t.id === table.id)
-        if (existingIndex >= 0) {
-          const newTables = [...prevTables]
-          newTables[existingIndex] = updatedTable
-          return newTables
-        } else {
-          return [...prevTables, updatedTable]
-        }
-      })
-
-      console.log(`💾 Table ${table.number} saved to database simulation`)
-      return true
-    } catch (error) {
-      console.error("❌ Failed to save table to database:", error)
-      return false
-    }
-  }
-
-  const getTableFromDatabase = async (id: number): Promise<Table | null> => {
-    try {
-      const table = tables.find((t) => t.id === id)
-      console.log(`🔍 Retrieved table ${id} from database simulation:`, table ? "Found" : "Not found")
-      return table || null
-    } catch (error) {
-      console.error("❌ Failed to get table from database:", error)
-      return null
-    }
-  }
-
-  const getAllTablesFromDatabase = async (): Promise<Table[]> => {
-    try {
-      console.log(`📋 Retrieved ${tables.length} tables from database simulation`)
-      return tables
-    } catch (error) {
-      console.error("❌ Failed to get all tables from database:", error)
-      return []
-    }
-  }
-
-  const updateTableInDatabase = async (id: number, updates: Partial<Table>): Promise<boolean> => {
-    try {
-      setTables((prevTables) =>
-        prevTables.map((table) => (table.id === id ? { ...table, ...updates, updatedAt: new Date() } : table)),
-      )
-      console.log(`✏️ Table ${id} updated in database simulation`)
-      return true
-    } catch (error) {
-      console.error("❌ Failed to update table in database:", error)
-      return false
-    }
-  }
-
-  const deleteTableFromDatabase = async (id: number): Promise<boolean> => {
-    try {
-      setTables((prevTables) => prevTables.filter((table) => table.id !== id))
-      console.log(`🗑️ Table ${id} deleted from database simulation`)
-      return true
-    } catch (error) {
-      console.error("❌ Failed to delete table from database:", error)
-      return false
-    }
-  }
-
   const updateTablePosition = (id: number, x: number, y: number) => {
-    updateTableInDatabase(id, { x, y })
+    setTables((prevTables) =>
+      prevTables.map((table) =>
+        table.id === id ? { ...table, x, y, updatedAt: new Date() } : table
+      )
+    )
   }
 
   const updateTableStatus = (id: number, status: Table["status"]) => {
-    updateTableInDatabase(id, { status })
+    setTables((prevTables) =>
+      prevTables.map((table) =>
+        table.id === id ? { ...table, status, updatedAt: new Date() } : table
+      )
+    )
   }
 
   const addTable = (newTable: Omit<Table, "id">) => {
@@ -338,12 +162,11 @@ export function TableProvider({ children }: { children: ReactNode }) {
       },
     }
 
-    console.log("🆕 Adding new table to database simulation:", tableWithMetadata)
-    saveTableToDatabase(tableWithMetadata)
+    setTables((prevTables) => [...prevTables, tableWithMetadata])
   }
 
   const removeTable = (id: number) => {
-    deleteTableFromDatabase(id)
+    setTables((prevTables) => prevTables.filter((table) => table.id !== id))
   }
 
   const getTableById = (id: number) => {
@@ -351,12 +174,20 @@ export function TableProvider({ children }: { children: ReactNode }) {
   }
 
   const assignWaiterToTable = (tableId: number, waiterName: string) => {
-    updateTableInDatabase(tableId, {
-      assignedWaiter: waiterName,
-      currentOrder: tables.find((t) => t.id === tableId)?.currentOrder
-        ? { ...tables.find((t) => t.id === tableId)!.currentOrder!, waiter: waiterName }
-        : undefined,
-    })
+    setTables((prevTables) =>
+      prevTables.map((table) =>
+        table.id === tableId
+          ? {
+              ...table,
+              assignedWaiter: waiterName,
+              currentOrder: table.currentOrder
+                ? { ...table.currentOrder, waiter: waiterName }
+                : undefined,
+              updatedAt: new Date(),
+            }
+          : table
+      )
+    )
   }
 
   const addProductToTable = (tableId: number, product: Product) => {
@@ -380,15 +211,22 @@ export function TableProvider({ children }: { children: ReactNode }) {
           const existingItemIndex = currentOrder.items.findIndex((item) => item.id === product.id)
           let updatedItems
 
+          // Asegura que el producto tenga un precio numérico y el área asignada
+          const productWithPrice = {
+            ...product,
+            sell_price_inc_tax: Number(product.sell_price_inc_tax) || 0,
+            order_area_id: (product as any).order_area_id ?? null
+          }
+
           if (existingItemIndex >= 0) {
             updatedItems = currentOrder.items.map((item, index) =>
               index === existingItemIndex ? { ...item, quantity: item.quantity + 1 } : item,
             )
           } else {
-            updatedItems = [...currentOrder.items, { ...product, quantity: 1 }]
+            updatedItems = [...currentOrder.items, { ...productWithPrice, quantity: 1 }]
           }
 
-          const total = updatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+          const total = updatedItems.reduce((sum, item) => sum + item.sell_price_inc_tax * item.quantity, 0)
 
           const updatedTable = {
             ...table,
@@ -400,9 +238,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             },
             updatedAt: new Date(),
           }
-
-          // Guardar en "base de datos"
-          saveTableToDatabase(updatedTable)
 
           return updatedTable
         }
@@ -416,7 +251,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
       prevTables.map((table) => {
         if (table.id === tableId && table.currentOrder) {
           const updatedItems = table.currentOrder.items.filter((item) => item.id !== productId)
-          const total = updatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+          const total = updatedItems.reduce((sum, item) => sum + item.sell_price_inc_tax * item.quantity, 0)
 
           const updatedTable = {
             ...table,
@@ -429,7 +264,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -449,7 +283,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
           const updatedItems = table.currentOrder.items.map((item) =>
             item.id === productId ? { ...item, quantity } : item,
           )
-          const total = updatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+          const total = updatedItems.reduce((sum, item) => sum + item.sell_price_inc_tax * item.quantity, 0)
 
           const updatedTable = {
             ...table,
@@ -461,7 +295,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -470,18 +303,35 @@ export function TableProvider({ children }: { children: ReactNode }) {
   }
 
   const completeTableOrder = (tableId: number) => {
-    updateTableInDatabase(tableId, {
-      status: "needs-cleaning",
-      currentOrder: tables.find((t) => t.id === tableId)?.currentOrder
-        ? { ...tables.find((t) => t.id === tableId)!.currentOrder!, status: "completed" }
-        : undefined,
-    })
+    setTables((prevTables) =>
+      prevTables.map((table) =>
+        table.id === tableId
+          ? {
+              ...table,
+              status: "needs-cleaning" as const,
+              currentOrder: table.currentOrder
+                ? { ...table.currentOrder, status: "completed" as const }
+                : undefined,
+              updatedAt: new Date(),
+            }
+          : table
+      )
+    )
   }
 
   const clearTableOrder = (tableId: number) => {
-    updateTableInDatabase(tableId, {
-      status: "available",
-      currentOrder: undefined,
+    setTables((prevTables) => {
+      const updatedTables = prevTables.map((table) =>
+        table.id === tableId
+          ? {
+              ...table,
+              status: "available" as const,
+              currentOrder: undefined,
+              updatedAt: new Date(),
+            }
+          : table
+      )
+      return updatedTables
     })
   }
 
@@ -497,7 +347,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             },
             updatedAt: new Date(),
           }
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -511,11 +360,15 @@ export function TableProvider({ children }: { children: ReactNode }) {
 
     return table.currentOrder.items.reduce(
       (acc, item) => {
-        const area = item.preparationArea
-        if (!acc[area]) {
-          acc[area] = []
+        const prod = item as MesaProduct & { quantity: number }
+        let areaName = 'General'
+        if (prod.order_area_id) {
+          areaName = prod.order_area_id.toString()
         }
-        acc[area].push(item)
+        if (!acc[areaName]) {
+          acc[areaName] = []
+        }
+        acc[areaName].push(item)
         return acc
       },
       {} as Record<string, Array<Product & { quantity: number }>>,
@@ -524,16 +377,23 @@ export function TableProvider({ children }: { children: ReactNode }) {
 
   // Funciones de división de cuenta (mantenidas igual)
   const enableSplitMode = (tableId: number) => {
-    updateTableInDatabase(tableId, {
-      currentOrder: tables.find((t) => t.id === tableId)?.currentOrder
-        ? {
-            ...tables.find((t) => t.id === tableId)!.currentOrder!,
-            splitMode: true,
-            status: "split",
-            bills: [],
-          }
-        : undefined,
-    })
+    setTables((prevTables) =>
+      prevTables.map((table) =>
+        table.id === tableId
+          ? {
+              ...table,
+              currentOrder: tables.find((t) => t.id === tableId)?.currentOrder
+                ? {
+                    ...tables.find((t) => t.id === tableId)!.currentOrder!,
+                    splitMode: true,
+                    status: "split",
+                    bills: [],
+                  }
+                : undefined,
+            }
+          : table
+      )
+    )
   }
 
   const addPersonToBill = (tableId: number, personName: string) => {
@@ -560,7 +420,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -581,7 +440,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -616,7 +474,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
                 updatedItems = [...bill.items, newBillItem]
               }
 
-              const subtotal = updatedItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
+              const subtotal = updatedItems.reduce((sum, item) => sum + item.product.sell_price_inc_tax * item.quantity, 0)
               const tax = subtotal * 0.1
               const total = subtotal + tax
 
@@ -640,7 +498,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -656,7 +513,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
           if (!product) return table
 
           const quantityPerPerson = quantity / personIds.length
-          const pricePerPerson = (product.price * quantityPerPerson) / personIds.length
+          const pricePerPerson = product.sell_price_inc_tax / personIds.length
 
           const updatedBills = table.currentOrder.bills.map((bill) => {
             if (personIds.includes(bill.id)) {
@@ -665,7 +522,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
 
               const sharedBillItem: BillItem = {
                 productId,
-                product: { ...product, price: pricePerPerson },
+                product: { ...product, sell_price_inc_tax: pricePerPerson },
                 quantity: quantityPerPerson,
                 assignedTo: personIds,
                 isShared: true,
@@ -677,7 +534,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
                 updatedItems = [...bill.items, sharedBillItem]
               }
 
-              const subtotal = updatedItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
+              const subtotal = updatedItems.reduce((sum, item) => sum + item.product.sell_price_inc_tax * item.quantity, 0)
               const tax = subtotal * 0.1
               const total = subtotal + tax
 
@@ -701,7 +558,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           }
 
-          saveTableToDatabase(updatedTable)
           return updatedTable
         }
         return table
@@ -737,6 +593,7 @@ export function TableProvider({ children }: { children: ReactNode }) {
     if (!existingOnlineTable) {
       const onlineTable: Omit<Table, "id"> = {
         number: 999,
+        name: '999',
         x: 50,
         y: 50,
         width: 120,
@@ -760,16 +617,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
       for (let i = 0; i < item.quantity; i++) {
         addProductToTable(onlineTableId, item)
       }
-    })
-
-    updateTableInDatabase(onlineTableId, {
-      currentOrder: tables.find((t) => t.id === onlineTableId)?.currentOrder
-        ? {
-            ...tables.find((t) => t.id === onlineTableId)!.currentOrder!,
-            orderType: "online",
-            customerInfo,
-          }
-        : undefined,
     })
   }
 
@@ -798,12 +645,6 @@ export function TableProvider({ children }: { children: ReactNode }) {
         calculateBillForPerson,
         finalizeSplitBills,
         createOnlineOrder,
-        // Funciones de simulación de base de datos
-        saveTableToDatabase,
-        getTableFromDatabase,
-        getAllTablesFromDatabase,
-        updateTableInDatabase,
-        deleteTableFromDatabase,
       }}
     >
       {children}

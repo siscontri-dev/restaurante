@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { useTables, type Table } from "../context/table-context"
 import { ShoppingBag, Printer } from "lucide-react"
@@ -60,7 +60,7 @@ export default function DraggableTable({
     }
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleGlobalMouseMove = (e: MouseEvent) => {
     if (!isDragging || !isDragMode) return
 
     e.preventDefault()
@@ -80,9 +80,21 @@ export default function DraggableTable({
     }
   }
 
-  const handleMouseUp = () => {
+  const handleGlobalMouseUp = () => {
     setIsDragging(false)
   }
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleGlobalMouseMove)
+      document.addEventListener('mouseup', handleGlobalMouseUp)
+      
+      return () => {
+        document.removeEventListener('mousemove', handleGlobalMouseMove)
+        document.removeEventListener('mouseup', handleGlobalMouseUp)
+      }
+    }
+  }, [isDragging, dragOffset, isDragMode])
 
   // Handle product drop
   const handleDrop = (e: React.DragEvent) => {
@@ -129,16 +141,13 @@ export default function DraggableTable({
         height: table.height,
       }}
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
       {/* Table Header */}
       <div className="text-center mb-1">
-        <div className="font-bold text-sm">Mesa {table.number}</div>
+        <div className="font-bold text-sm">{table.number}</div>
         <div className="text-xs opacity-75">{table.seats} asientos</div>
       </div>
 
@@ -172,7 +181,7 @@ export default function DraggableTable({
             <div className="text-xs text-center mt-1 opacity-75">+{orderItems.length - 4} más</div>
           )}
 
-          <div className="text-xs text-center font-bold mt-1">${table.currentOrder?.total.toFixed(2)}</div>
+          <div className="text-xs text-center font-bold mt-1">${Number(table.currentOrder?.total || 0).toFixed(2)}</div>
         </div>
       )}
 

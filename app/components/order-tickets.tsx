@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Printer, Check, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +14,11 @@ interface OrderTicketsProps {
 export default function OrderTickets({ table }: OrderTicketsProps) {
   const { getOrderItemsByArea, printOrderByArea } = useTables()
   const [printingArea, setPrintingArea] = useState<string | null>(null)
+  const [areas, setAreas] = useState<{ id: number, name: string }[]>([])
+
+  useEffect(() => {
+    fetch("/api/order-areas").then(res => res.json()).then(data => setAreas(data.areas || []))
+  }, [])
 
   if (!table.currentOrder || table.currentOrder.items.length === 0) {
     return (
@@ -35,6 +40,10 @@ export default function OrderTickets({ table }: OrderTicketsProps) {
   }
 
   const getAreaName = (area: string) => {
+    // Si es un id numérico, buscar en el array de áreas
+    const found = areas.find(a => String(a.id) === String(area))
+    if (found) return found.name
+    // Si no, usar el switch anterior para compatibilidad
     switch (area) {
       case "kitchen":
         return "Cocina"
@@ -82,7 +91,7 @@ export default function OrderTickets({ table }: OrderTicketsProps) {
                     <span>
                       {item.quantity}x {item.name}
                     </span>
-                    <span className="text-muted-foreground">${(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="text-muted-foreground">${(item.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
                   </li>
                 ))}
               </ul>
@@ -106,7 +115,7 @@ export default function OrderTickets({ table }: OrderTicketsProps) {
                 ) : (
                   <>
                     <Printer className="h-4 w-4 mr-2" />
-                    Imprimir en {getAreaName(area)}
+                    Imprimir en {table.number}
                   </>
                 )}
               </Button>
