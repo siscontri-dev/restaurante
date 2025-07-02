@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, ShoppingCart, Search, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import RestaurantCanvas from "../components/restaurant-canvas"
 import ProductGrid from "../components/product-grid"
 import CategorySidebar from "../components/category-sidebar"
+import LocationSelectorModal from "../components/location-selector-modal"
 import { useTables, type Table } from "../context/table-context"
 import { useCart } from "../context/cart-context"
 import { CartProvider } from "../context/cart-context"
@@ -19,6 +20,25 @@ export default function TablesPage() {
   const [selectedTable, setSelectedTable] = useState<Table | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
+  const [selectedLocation, setSelectedLocation] = useState<{ id: number; name: string } | null>(null)
+  const [showLocationModal, setShowLocationModal] = useState(false)
+
+  useEffect(() => {
+    // Verificar si ya hay una ubicación seleccionada
+    const savedLocation = localStorage.getItem('selectedLocation')
+    if (savedLocation) {
+      setSelectedLocation(JSON.parse(savedLocation))
+    } else {
+      setShowLocationModal(true)
+    }
+  }, [])
+
+  const handleLocationSelected = (location: { id: number; name: string }) => {
+    setSelectedLocation(location)
+    localStorage.setItem('selectedLocation', JSON.stringify(location))
+    setShowLocationModal(false)
+    // El contexto de mesas automáticamente se actualizará con esta nueva ubicación
+  }
 
   const handleTableSelect = (table: Table) => {
     if (table.status === "available") {
@@ -38,6 +58,11 @@ export default function TablesPage() {
               Volver al POS
             </Button>
             <h1 className="text-2xl font-bold">Gestión de Mesas</h1>
+            {selectedLocation && (
+              <span className="text-sm text-muted-foreground bg-gray-100 px-2 py-1 rounded">
+                📍 {selectedLocation.name}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -90,6 +115,12 @@ export default function TablesPage() {
             <RestaurantCanvas onTableSelect={handleTableSelect} />
           </div>
         </div>
+
+        {/* Location Selector Modal */}
+        <LocationSelectorModal
+          isOpen={showLocationModal}
+          onLocationSelected={handleLocationSelected}
+        />
       </div>
     </CartProvider>
   )

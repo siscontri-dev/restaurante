@@ -106,10 +106,26 @@ export function TableProvider({ children }: { children: ReactNode }) {
         const token = localStorage.getItem('token')
         const selectedLocation = JSON.parse(localStorage.getItem('selectedLocation') || '{}')
         const locationId = selectedLocation.location_id || selectedLocation.id
+        
+        console.log('🏪 Cargando mesas para ubicación:', { selectedLocation, locationId })
+        
+        if (!locationId || !token) {
+          console.log('⚠️ No hay ubicación o token - mesas no cargadas')
+          return
+        }
+
         const res = await fetch(`/api/res-tables?location_id=${locationId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
+        
+        if (!res.ok) {
+          console.error('❌ Error al obtener mesas:', res.status, res.statusText)
+          return
+        }
+        
         const data = await res.json()
+        console.log('📋 Mesas obtenidas de la BD:', data)
+        
         // Mapear para que cada mesa tenga al menos id y number (usando name como number si es necesario)
         const mappedTables = (data.tables || []).map((t: any, index: number) => ({
           id: t.id,
@@ -123,12 +139,29 @@ export function TableProvider({ children }: { children: ReactNode }) {
           status: "available" as const,
           shape: "rectangle" as const
         }))
+        
+        console.log('✅ Mesas mapeadas:', mappedTables)
         setTables(mappedTables)
       } catch (error) {
-        console.error('Error cargando mesas desde la base de datos:', error)
+        console.error('❌ Error cargando mesas desde la base de datos:', error)
       }
     }
+
     fetchTables()
+
+    // Escuchar cambios en localStorage para actualizar mesas cuando cambie la ubicación
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'selectedLocation') {
+        console.log('🔄 Ubicación cambiada, recargando mesas...')
+        setTimeout(fetchTables, 500) // Pequeño delay para asegurar que el localStorage se actualice
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
   }, [])
 
   const updateTablePosition = (id: number, x: number, y: number) => {
