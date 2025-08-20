@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { useTables, type Table } from "../context/table-context"
 import { ShoppingBag, Printer } from "lucide-react"
 import type { Product } from "../context/cart-context"
+import { formatPrice } from "@/lib/format-price"
 
 interface DraggableTableProps {
   table: Table
@@ -181,7 +182,7 @@ export default function DraggableTable({
             <div className="text-xs text-center mt-1 opacity-75">+{orderItems.length - 4} más</div>
           )}
 
-          <div className="text-xs text-center font-bold mt-1">${Number(table.currentOrder?.total || 0).toFixed(2)}</div>
+          <div className="text-xs text-center font-bold mt-1">{formatPrice(Number(table.currentOrder?.total || 0))}</div>
         </div>
       )}
 

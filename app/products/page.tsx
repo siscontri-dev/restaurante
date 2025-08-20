@@ -32,33 +32,9 @@ export default function ProductsPage() {
   }, [router])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Gestión de Productos</h1>
-            <p className="text-gray-600">Administra los productos de tu restaurante</p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-            >
-              ← Volver al Dashboard
-            </button>
-            <button
-              onClick={() => router.push("/pos")}
-              className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
-            >
-              Ir al POS
-            </button>
-          </div>
-        </div>
-      </div>
-
+    <div className="min-h-screen bg-white">
       {/* Content */}
-      <div className="container mx-auto max-w-7xl py-8 px-4">
+      <div>
         <ProductManagement />
       </div>
     </div>

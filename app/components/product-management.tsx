@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, Search, X, Save, Loader2, Image as ImageIcon, Link } from "lucide-react"
+import { Plus, Edit, Trash2, Search, X, Save, Loader2, Image as ImageIcon, Link, Package } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,14 +10,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Select } from "@/components/ui/select"
 import type { Product } from "@/lib/services/product-service"
+import { formatPrice } from "@/lib/format-price"
+import ComboManagement from "./combo-management"
+import ComboProductEditor from "./combo-product-editor"
 
 interface ExtendedProduct extends Omit<Product, 'image' | 'product_description'> {
   price?: number
   image: string
   product_description: string | null
   not_for_selling: number
+  tax?: number | null
 }
 
 interface ProductFormData {
@@ -29,6 +32,12 @@ interface ProductFormData {
   product_description: string
   not_for_selling: number
   order_area_id: number | null
+  tax: number | null
+  purchase_price_without_tax: number
+  purchase_price_with_tax: number
+  profit_percent: number
+  sell_price_without_tax: number
+  sell_price_with_tax: number
 }
 
 type ImageSource = 'file' | 'url'
@@ -48,6 +57,14 @@ export default function ProductManagement() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>('')
   const [areas, setAreas] = useState<{ id: number, name: string }[]>([])
+  const [taxRates, setTaxRates] = useState<{ id: number, name: string, amount: number }[]>([])
+  const [showComboModal, setShowComboModal] = useState(false)
+  const [isEditingCombo, setIsEditingCombo] = useState(false)
+  const [comboProducts, setComboProducts] = useState<any[]>([])
+  const [availableProducts, setAvailableProducts] = useState<any[]>([])
+  const [updatedComboIds, setUpdatedComboIds] = useState<number[]>([])
+  // Estado para las pestañas
+  const [activeTab, setActiveTab] = useState<'products' | 'combos'>('products')
   const [formData, setFormData] = useState<ProductFormData>({
     name: "",
     sku: "",
@@ -55,13 +72,85 @@ export default function ProductManagement() {
     image: "",
     product_description: "",
     not_for_selling: 1,
-    order_area_id: null
+    order_area_id: null,
+    tax: null,
+    purchase_price_without_tax: 0,
+    purchase_price_with_tax: 0,
+    profit_percent: 25,
+    sell_price_without_tax: 0,
+    sell_price_with_tax: 0
   })
 
   useEffect(() => {
     fetchProducts()
-    fetch("/api/order-areas").then(res => res.json()).then(data => setAreas(data.areas || []))
+    fetchAvailableProducts()
+    fetch("/api/order-areas").then(res => res.json()).then(data => setAreas(data.data || []))
+    
+    // Obtener impuestos con autorización
+    const token = localStorage.getItem('token')
+    if (token) {
+      fetch("/api/tax-rates", {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }).then(res => res.json()).then(data => setTaxRates(data.data || []))
+    }
   }, [page])
+
+  // Helper function to check if a product is a combo
+  const isProductCombo = (product: ExtendedProduct): boolean => {
+    if (!product.combo) return false
+    try {
+      const combo = typeof product.combo === 'string' ? JSON.parse(product.combo) : product.combo
+      return Array.isArray(combo) && combo.length > 0
+    } catch {
+      return false
+    }
+  }
+
+  // Load available products for combo selection
+  const fetchAvailableProducts = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/products?page=1&pageSize=1000`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setAvailableProducts(data.products || [])
+      }
+    } catch (error) {
+      console.error('Error fetching available products:', error)
+    }
+  }
+
+  // Recalcular precios cuando cambie el impuesto
+  useEffect(() => {
+    if (formData.tax !== null) {
+      let field = ''
+      let baseValue = 0
+      
+      // Determinar qué campo usar como base para el cálculo
+      if (formData.purchase_price_without_tax > 0) {
+        field = 'purchase_without_tax'
+        baseValue = formData.purchase_price_without_tax
+      } else if (formData.purchase_price_with_tax > 0) {
+        field = 'purchase_with_tax'
+        baseValue = formData.purchase_price_with_tax
+      } else if (formData.sell_price_without_tax > 0) {
+        field = 'sell_without_tax'
+        baseValue = formData.sell_price_without_tax
+      } else if (formData.sell_price_with_tax > 0) {
+        field = 'sell_with_tax'
+        baseValue = formData.sell_price_with_tax
+      }
+      
+      if (field && baseValue > 0) {
+        const prices = calculatePrices(baseValue, field, formData.tax, formData.profit_percent)
+        setFormData(prev => ({ ...prev, ...prices }))
+      }
+    }
+  }, [formData.tax])
 
   const fetchProducts = async () => {
     try {
@@ -82,7 +171,8 @@ export default function ProductManagement() {
             price: product.sell_price_inc_tax,
             image: product.image || '/placeholder.svg',
             product_description: product.product_description || null,
-            not_for_selling: product.not_for_selling ?? 1
+            not_for_selling: product.not_for_selling ?? 1,
+            tax: (product as any).tax ?? null
           }
           uniqueProductsMap.set(product.id, mappedProduct)
         })
@@ -150,8 +240,39 @@ export default function ProductManagement() {
     setIsDialogOpen(true)
   }
 
-  const handleEditProduct = (product: ExtendedProduct) => {
+  const handleEditProduct = async (product: ExtendedProduct) => {
     setEditingProduct(product)
+    
+    // Check if this is a combo product
+    const productIsCombo = isProductCombo(product)
+    setIsEditingCombo(productIsCombo)
+    
+    if (productIsCombo) {
+      // Load combo products
+      try {
+        const combo = typeof product.combo === 'string' ? JSON.parse(product.combo) : product.combo
+        if (Array.isArray(combo)) {
+          // Get product details for each combo product ID
+          const comboProductDetails = []
+          for (const productId of combo) {
+            const productDetail = availableProducts.find(p => p.id === productId)
+            if (productDetail) {
+              comboProductDetails.push({
+                ...productDetail,
+                selected: true
+              })
+            }
+          }
+          setComboProducts(comboProductDetails)
+        }
+      } catch (error) {
+        console.error('Error parsing combo products:', error)
+        setComboProducts([])
+      }
+    } else {
+      setComboProducts([])
+    }
+    
     setFormData({
       id: product.id,
       name: product.name,
@@ -160,7 +281,13 @@ export default function ProductManagement() {
       image: product.image,
       product_description: product.product_description || '',
       not_for_selling: product.not_for_selling ?? 1,
-      order_area_id: product.order_area_id ?? null
+      order_area_id: product.order_area_id ?? null,
+      tax: product.tax ?? null,
+      purchase_price_without_tax: 0,
+      purchase_price_with_tax: 0,
+      profit_percent: 25,
+      sell_price_without_tax: 0,
+      sell_price_with_tax: Number(product.price) || 0
     })
     setImageSource(product.image.startsWith('/media/') ? 'file' : 'url')
     setImagePreview(product.image)
@@ -252,7 +379,7 @@ export default function ProductManagement() {
   }
 
   const handleSaveProduct = async () => {
-    if (!formData.name || !formData.sku || formData.price <= 0) {
+    if (!formData.name || !formData.sku || formData.sell_price_with_tax <= 0) {
       alert('Por favor completa todos los campos requeridos')
       return
     }
@@ -274,22 +401,33 @@ export default function ProductManagement() {
 
       const url = editingProduct ? '/api/products' : '/api/products'
       const method = editingProduct ? 'PUT' : 'POST'
+      
+      const requestBody = {
+        id: editingProduct?.id,
+        name: formData.name,
+        sku: formData.sku,
+        sell_price_inc_tax: formData.sell_price_with_tax,
+        default_sell_price: formData.sell_price_without_tax,
+        profit_percent: formData.profit_percent,
+        default_purchase_price: formData.purchase_price_without_tax,
+        dpp_inc_tax: formData.purchase_price_with_tax,
+        image: imageUrl,
+        product_description: formData.product_description,
+        not_for_selling: formData.not_for_selling,
+        order_area_id: formData.order_area_id || null,
+        tax: formData.tax,
+        combo: editingProduct && (editingProduct as any).combo ? updatedComboIds : undefined
+      }
+      
+      console.log('🔍 Frontend - Datos a enviar:', JSON.stringify(requestBody, null, 2))
+      
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          id: editingProduct?.id,
-          name: formData.name,
-          sku: formData.sku,
-          sell_price_inc_tax: formData.price,
-          image: imageUrl,
-          product_description: formData.product_description,
-          not_for_selling: formData.not_for_selling,
-          order_area_id: formData.order_area_id || null
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (!response.ok) {
@@ -316,128 +454,339 @@ export default function ProductManagement() {
       image: "",
       product_description: "",
       not_for_selling: 1,
-      order_area_id: null
+      order_area_id: null,
+      tax: null,
+      purchase_price_without_tax: 0,
+      purchase_price_with_tax: 0,
+      profit_percent: 25,
+      sell_price_without_tax: 0,
+      sell_price_with_tax: 0
     })
     setSelectedFile(null)
     setImagePreview("")
     setImageSource("url")
+    setUpdatedComboIds([])
   }
 
-  const filteredProducts = products.filter(product =>
+  const getTaxName = (taxId: number | null) => {
+    if (!taxId) return 'Sin impuesto'
+    const taxRate = taxRates.find(tr => tr.id === taxId)
+    return taxRate ? taxRate.name : 'Impuesto no encontrado'
+  }
+
+  const getTaxRate = (taxId: number | null) => {
+    if (!taxId) return null
+    return taxRates.find(tr => tr.id === taxId) || null
+  }
+
+  const calculatePrices = (baseValue: number, field: string, taxId: number | null, profitPercent: number) => {
+    const taxRate = getTaxRate(taxId)
+    const taxPercent = taxRate ? taxRate.amount : 0
+    
+    let purchaseWithoutTax = 0
+    let purchaseWithTax = 0
+    let sellWithoutTax = 0
+    let sellWithTax = 0
+
+    switch (field) {
+      case 'purchase_without_tax':
+        // Si cambio precio de compra SIN impuesto
+        purchaseWithoutTax = baseValue
+        // Precio con IVA = valor sin IVA × (1 + tasa_iva)
+        purchaseWithTax = baseValue * (1 + taxPercent / 100)
+        // Precio de venta sin impuesto = precio compra sin impuesto × (1 + margen)
+        sellWithoutTax = purchaseWithoutTax * (1 + profitPercent / 100)
+        // Precio de venta con impuesto = precio venta sin impuesto × (1 + tasa_iva)
+        sellWithTax = sellWithoutTax * (1 + taxPercent / 100)
+        break
+        
+      case 'purchase_with_tax':
+        // Si cambio precio de compra CON impuesto
+        purchaseWithTax = baseValue
+        // valor sin IVA = valor con IVA ÷ (1 + tasa_iva)
+        purchaseWithoutTax = baseValue / (1 + taxPercent / 100)
+        sellWithoutTax = purchaseWithoutTax * (1 + profitPercent / 100)
+        sellWithTax = sellWithoutTax * (1 + taxPercent / 100)
+        break
+        
+      case 'sell_without_tax':
+        // Si cambio precio de venta SIN impuesto
+        sellWithoutTax = baseValue
+        // Mantener precios de compra sin cambios (solo los cambia el usuario)
+        purchaseWithoutTax = formData.purchase_price_without_tax
+        purchaseWithTax = formData.purchase_price_with_tax
+        // Solo recalcular el precio de venta con impuesto
+        sellWithTax = sellWithoutTax * (1 + taxPercent / 100)
+        break
+        
+      case 'sell_with_tax':
+        // Si cambio precio de venta CON impuesto
+        sellWithTax = baseValue
+        // Mantener precios de compra sin cambios (solo los cambia el usuario)
+        purchaseWithoutTax = formData.purchase_price_without_tax
+        purchaseWithTax = formData.purchase_price_with_tax
+        // Solo recalcular el precio de venta sin impuesto
+        sellWithoutTax = baseValue / (1 + taxPercent / 100)
+        break
+        
+      case 'profit_percent':
+        // Si cambio el margen
+        purchaseWithoutTax = formData.purchase_price_without_tax
+        purchaseWithTax = purchaseWithoutTax * (1 + taxPercent / 100)
+        sellWithoutTax = purchaseWithoutTax * (1 + baseValue / 100)
+        sellWithTax = sellWithoutTax * (1 + taxPercent / 100)
+        break
+    }
+
+    return {
+      purchase_price_without_tax: Math.round(purchaseWithoutTax * 100) / 100,
+      purchase_price_with_tax: Math.round(purchaseWithTax * 100) / 100,
+      sell_price_without_tax: Math.round(sellWithoutTax * 100) / 100,
+      sell_price_with_tax: Math.round(sellWithTax * 100) / 100
+    }
+  }
+
+  // Filtrar productos que NO son combos para la sección de productos individuales
+  const individualProducts = products.filter(product => 
+    !product.combo || (Array.isArray(product.combo) && product.combo.length === 0)
+  )
+  
+  // Filtrar productos que SÍ son combos para la sección de combos
+  const comboProductsList = products.filter(product => 
+    product.combo && Array.isArray(product.combo) && product.combo.length > 0
+  )
+  
+  const filteredProducts = individualProducts.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.sku.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const filteredCombos = comboProductsList.filter(product =>
+    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Gestión de Productos</h2>
-          <p className="text-gray-600">Administra los productos de tu restaurante</p>
-        </div>
-        <Button onClick={handleCreateProduct} className="bg-green-600 hover:bg-green-700">
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo Producto
-        </Button>
-      </div>
-
-      {/* Search */}
-      <div className="flex gap-2">
-        <Input
-          placeholder="Buscar productos por nombre o SKU..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-          className="max-w-md"
-        />
-        <Button onClick={handleSearch} variant="outline">
-          <Search className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Products Grid */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin" />
-          <span className="ml-2">Cargando productos...</span>
-        </div>
-      ) : products.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredProducts.map((product) => (
-            <Card key={product.id || product.sku} className="overflow-hidden">
-              <div className="aspect-square relative">
-                <img
-                  src={product.image || "/placeholder.svg"}
-                  alt={product.name}
-                  className="w-full h-full object-cover"
+    <div className="bg-white p-0">
+      <div className="space-y-6 -mt-12">
+        {/* Header con diseño mejorado */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">Gestión de Productos</h1>
+              <p className="text-gray-600">Administra el catálogo de productos y sus precios</p>
+            </div>
+            
+            {/* Search Bar y botones en línea */}
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Buscar productos por nombre o SKU..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  className="pl-10 pr-4 py-3 border-gray-200 focus:border-purple-500 focus:ring-purple-500 rounded-xl w-64"
                 />
-                <div className="absolute top-2 right-2 flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleEditProduct(product)}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleDeleteProduct(product.id!)}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
               </div>
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  <h3 className="font-semibold line-clamp-1">{product.name}</h3>
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline" className="text-xs">
-                      {product.sku}
-                    </Badge>
-                    <span className="font-bold text-green-600">
-                      ${Number(product.price).toFixed(2)}
-                    </span>
+              
+              <Button 
+                onClick={handleCreateProduct} 
+                className="!bg-purple-600 !hover:bg-purple-700 text-white px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 font-medium"
+              >
+                <Plus className="mr-2 h-5 w-5" />
+                Nuevo Producto
+              </Button>
+              <Button 
+                onClick={() => setShowComboModal(true)} 
+                className="!bg-purple-600 !hover:bg-purple-700 text-white px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 font-medium"
+              >
+                <Package className="mr-2 h-5 w-5" />
+                Nuevo Combo
+              </Button>
+            </div>
+          </div>
+          
+
+        </div>
+
+        {/* Tabs para alternar entre Productos y Combos */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-100">
+            <div className="flex">
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`flex-1 px-6 py-4 text-center font-medium transition-colors duration-200 ${
+                  activeTab === 'products'
+                    ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                <Package className="inline-block mr-2 h-5 w-5" />
+                Productos Individuales ({filteredProducts.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('combos')}
+                className={`flex-1 px-6 py-4 text-center font-medium transition-colors duration-200 ${
+                  activeTab === 'combos'
+                    ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                <Package className="inline-block mr-2 h-5 w-5" />
+                Combos
+              </button>
+            </div>
+          </div>
+          
+          {activeTab === 'products' ? (
+            // Contenido de Productos Individuales
+            <>
+              {loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="text-center">
+                    <Loader2 className="h-12 w-12 animate-spin text-purple-600 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">Cargando productos...</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+              ) : filteredProducts.length > 0 ? (
+            <div className="divide-y divide-gray-100">
+              {filteredProducts.map((product) => (
+                <div key={product.id || product.sku} className="group hover:bg-gray-50 transition-colors duration-200">
+                  <div className="flex items-center p-6">
+                    {/* Imagen del producto mejorada */}
+                    <div className="relative w-24 h-24 flex-shrink-0 mr-6">
+                      {product.image && product.image !== "/placeholder.svg" ? (
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover rounded-xl shadow-md"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl shadow-md flex items-center justify-center">
+                          <span className="text-gray-400 text-xs font-medium">Sin imagen</span>
+                        </div>
+                      )}
+                      <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <div className="bg-white rounded-full p-1 shadow-lg">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Información del producto mejorada */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-xl text-gray-800 mb-2 group-hover:text-purple-600 transition-colors duration-200">
+                            {product.name}
+                          </h3>
+                          <div className="flex items-center gap-4">
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 px-3 py-1 rounded-full text-sm font-medium">
+                              SKU: {product.sku}
+                            </Badge>
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                              <span>Impuesto: {getTaxName(product.tax ?? null)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Precio y botones mejorados */}
+                        <div className="flex-shrink-0 ml-6 flex items-center gap-4">
+                          <div className="text-right">
+                            <span className="font-bold text-2xl text-green-600">
+                              {formatPrice(Number(product.price))}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEditProduct(product)}
+                              className="h-8 w-8 p-0 rounded-full border-gray-200 hover:border-purple-300 hover:bg-purple-50"
+                            >
+                              <Edit className="h-3 w-3 text-gray-600" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteProduct(product.id!)}
+                              className="h-8 w-8 p-0 rounded-full border-gray-200 hover:border-red-300 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3 w-3 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Package className="h-12 w-12 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">No se encontraron productos</h3>
+              <p className="text-gray-600 mb-6">Intenta crear un nuevo producto usando el botón "Nuevo Producto"</p>
+              <Button 
+                onClick={handleCreateProduct}
+                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                <Plus className="mr-2 h-5 w-5" />
+                Crear Primer Producto
+              </Button>
+            </div>
+          )}
+            </>
+          ) : (
+            // Contenido de Combos
+            <div className="p-6">
+              <ComboManagement searchTerm={searchTerm} />
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No se encontraron productos</p>
-          <p className="text-sm text-gray-400 mt-2">Intenta crear un nuevo producto usando el botón "Nuevo Producto"</p>
-        </div>
-      )}
 
-      {/* Paginación */}
-      {products.length > 0 && (
-        <div className="flex justify-center gap-2 mt-4">
-          <Button 
-            disabled={page === 1} 
-            onClick={() => setPage(page - 1)}
-            variant="outline"
-          >
-            Anterior
-          </Button>
-          <span className="py-2 px-4 bg-gray-100 rounded">Página {page}</span>
-          <Button 
-            disabled={products.length < PAGE_SIZE} 
-            onClick={() => setPage(page + 1)}
-            variant="outline"
-          >
-            Siguiente
-          </Button>
-        </div>
-      )}
+        {/* Paginación mejorada */}
+        {products.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+            <div className="flex items-center justify-center gap-4">
+              <Button 
+                disabled={page === 1} 
+                onClick={() => setPage(page - 1)}
+                variant="outline"
+                className="px-6 py-3 rounded-xl border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ← Anterior
+              </Button>
+              <div className="flex items-center gap-2">
+                <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium">
+                  Página {page}
+                </span>
+                <span className="text-gray-500">de {Math.ceil(total / PAGE_SIZE)}</span>
+              </div>
+              <Button 
+                disabled={products.length < PAGE_SIZE} 
+                onClick={() => setPage(page + 1)}
+                variant="outline"
+                className="px-6 py-3 rounded-xl border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Siguiente →
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Product Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
@@ -452,6 +801,7 @@ export default function ProductManagement() {
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Nombre del producto"
+                className="w-full"
               />
             </div>
 
@@ -462,20 +812,136 @@ export default function ProductManagement() {
                 value={formData.sku}
                 onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
                 placeholder="SKU del producto"
+                className="w-full"
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="price">Precio *</Label>
-              <Input
-                id="price"
-                type="number"
-                value={formData.price}
-                onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value.replace(',', '.')) || 0 })}
-                placeholder="0.00"
-                required
+            {/* Show combo products if editing a combo */}
+            {editingProduct && (editingProduct as any).combo && (
+              <ComboProductEditor
+                productId={editingProduct.id!}
+                comboData={(editingProduct as any).combo}
+                productName={editingProduct.name}
+                onComboChange={(updatedIds) => setUpdatedComboIds(updatedIds)}
               />
-            </div>
+            )}
+
+            {/* Only show regular product form if not a combo */}
+            {!(editingProduct as any)?.combo && (
+              <>
+                {/* Configuración de Impuesto */}
+                <div className="grid gap-2">
+                  <Label htmlFor="tax">Impuesto aplicable</Label>
+                  <select
+                    id="tax"
+                    value={formData.tax ?? ''}
+                    onChange={e => setFormData({ ...formData, tax: e.target.value ? Number(e.target.value) : null })}
+                    className="border rounded px-2 py-1 w-full"
+                  >
+                    <option value="">Sin impuesto</option>
+                    {taxRates.map(taxRate => (
+                      <option key={taxRate.id} value={taxRate.id}>{taxRate.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Configuración de Precios */}
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-800 mb-3">Configuración de Precios</h3>
+                  
+                  {/* Precio de Compra */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="purchase_without_tax">Precio de compra sin impuesto</Label>
+                      <Input
+                        id="purchase_without_tax"
+                        type="number"
+                        step="0.01"
+                        value={formData.purchase_price_without_tax || ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                          const prices = calculatePrices(value, 'purchase_without_tax', formData.tax, formData.profit_percent)
+                          setFormData({ ...formData, ...prices, purchase_price_without_tax: value })
+                        }}
+                        placeholder="0.00"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="purchase_with_tax">Precio de compra con impuesto</Label>
+                      <Input
+                        id="purchase_with_tax"
+                        type="number"
+                        step="0.01"
+                        value={formData.purchase_price_with_tax || ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                          const prices = calculatePrices(value, 'purchase_with_tax', formData.tax, formData.profit_percent)
+                          setFormData({ ...formData, ...prices, purchase_price_with_tax: value })
+                        }}
+                        placeholder="0.00"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Margen */}
+                  <div className="grid gap-2">
+                    <Label htmlFor="profit_percent">Margen (%)</Label>
+                    <Input
+                      id="profit_percent"
+                      type="number"
+                      step="0.01"
+                      value={formData.profit_percent || ''}
+                      onChange={(e) => {
+                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                        const prices = calculatePrices(value, 'profit_percent', formData.tax, value)
+                        setFormData({ ...formData, ...prices, profit_percent: value })
+                      }}
+                      placeholder="25.00"
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Precio de Venta */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="sell_without_tax">Precio de venta sin impuesto</Label>
+                      <Input
+                        id="sell_without_tax"
+                        type="number"
+                        step="0.01"
+                        value={formData.sell_price_without_tax || ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                          const prices = calculatePrices(value, 'sell_without_tax', formData.tax, formData.profit_percent)
+                          setFormData({ ...formData, ...prices, sell_price_without_tax: value })
+                        }}
+                        placeholder="0.00"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="sell_with_tax">Precio de venta con impuesto *</Label>
+                      <Input
+                        id="sell_with_tax"
+                        type="number"
+                        step="0.01"
+                        value={formData.sell_price_with_tax || ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                          const prices = calculatePrices(value, 'sell_with_tax', formData.tax, formData.profit_percent)
+                          setFormData({ ...formData, ...prices, sell_price_with_tax: value, price: value })
+                        }}
+                        placeholder="0.00"
+                        required
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="grid gap-2">
               <Label>Imagen del Producto</Label>
@@ -498,11 +964,12 @@ export default function ProductManagement() {
 
               {imageSource === 'file' ? (
                 <div className="grid gap-2">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                  />
+                                  <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="w-full"
+                />
                   {imagePreview && (
                     <div className="relative aspect-square w-full max-w-[200px] mx-auto">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -519,6 +986,7 @@ export default function ProductManagement() {
                   value={formData.image}
                   onChange={(e) => setFormData({ ...formData, image: e.target.value })}
                   placeholder="URL de la imagen"
+                  className="w-full"
                 />
               )}
             </div>
@@ -530,6 +998,7 @@ export default function ProductManagement() {
                 value={formData.product_description}
                 onChange={(e) => setFormData({ ...formData, product_description: e.target.value })}
                 placeholder="Descripción del producto"
+                className="w-full"
               />
             </div>
 
@@ -539,7 +1008,7 @@ export default function ProductManagement() {
                 id="area"
                 value={formData.order_area_id ?? ''}
                 onChange={e => setFormData({ ...formData, order_area_id: e.target.value ? Number(e.target.value) : null })}
-                className="border rounded px-2 py-1"
+                className="border rounded px-2 py-1 w-full"
               >
                 <option value="">General</option>
                 {areas.map(area => (
@@ -547,6 +1016,8 @@ export default function ProductManagement() {
                 ))}
               </select>
             </div>
+
+
           </div>
 
           <div className="flex justify-end gap-2">
@@ -564,6 +1035,16 @@ export default function ProductManagement() {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Combo Modal */}
+      <Dialog open={showComboModal} onOpenChange={setShowComboModal}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nuevo Combo</DialogTitle>
+          </DialogHeader>
+          <ComboManagement modalMode={true} />
         </DialogContent>
       </Dialog>
     </div>

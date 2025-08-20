@@ -127,25 +127,37 @@ export default function WebAdminPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b p-4 sticky top-0 z-50">
+      <div className="bg-white border-b border-purple-200 p-4 sticky top-0 z-50 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.push("/tables")}>
+            <Button 
+              variant="ghost" 
+              onClick={() => router.push("/tables")}
+              className="text-purple-700 hover:text-purple-800 hover:bg-purple-50"
+            >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver
             </Button>
             <div>
-              <h1 className="text-2xl font-bold">Configuración Web</h1>
-              <p className="text-sm text-muted-foreground">Personaliza tu página web</p>
+              <h1 className="text-2xl font-bold text-purple-900">Configuración Web</h1>
+              <p className="text-sm text-purple-600">Personaliza tu página web</p>
             </div>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handlePreview}>
+            <Button 
+              variant="outline" 
+              onClick={handlePreview}
+              className="border-purple-300 text-purple-700 hover:bg-purple-50 hover:border-purple-400"
+            >
               <Eye className="mr-2 h-4 w-4" />
               Vista Previa
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button 
+              onClick={handleSave} 
+              disabled={isSaving}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Guardando..." : "Guardar"}
             </Button>
@@ -155,20 +167,32 @@ export default function WebAdminPage() {
 
       <div className="container mx-auto max-w-6xl py-8 px-4">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-8">
-            <TabsTrigger value="general" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-4 mb-8 bg-purple-100 p-1">
+            <TabsTrigger 
+              value="general" 
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-purple-600"
+            >
               <Settings className="h-4 w-4" />
               General
             </TabsTrigger>
-            <TabsTrigger value="content" className="flex items-center gap-2">
+            <TabsTrigger 
+              value="content" 
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-purple-600"
+            >
               <Type className="h-4 w-4" />
               Contenido
             </TabsTrigger>
-            <TabsTrigger value="design" className="flex items-center gap-2">
+            <TabsTrigger 
+              value="design" 
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-purple-600"
+            >
               <Palette className="h-4 w-4" />
               Diseño
             </TabsTrigger>
-            <TabsTrigger value="features" className="flex items-center gap-2">
+            <TabsTrigger 
+              value="features" 
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-purple-600"
+            >
               <Layout className="h-4 w-4" />
               Características
             </TabsTrigger>
@@ -176,64 +200,69 @@ export default function WebAdminPage() {
 
           {/* General Tab */}
           <TabsContent value="general" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Información de la Empresa</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Información de la Empresa</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="companyName">Nombre de la Empresa</Label>
+                    <Label htmlFor="companyName" className="text-purple-700 font-medium">Nombre de la Empresa</Label>
                     <Input
                       id="companyName"
                       value={config.companyName}
                       onChange={(e) => handleInputChange("companyName", e.target.value)}
                       placeholder="DeliciousEats"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="companySlogan">Eslogan</Label>
+                    <Label htmlFor="companySlogan" className="text-purple-700 font-medium">Eslogan</Label>
                     <Input
                       id="companySlogan"
                       value={config.companySlogan}
                       onChange={(e) => handleInputChange("companySlogan", e.target.value)}
                       placeholder="Sabor que conquista"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="companyLogo">Logo (Emoji o URL)</Label>
+                  <Label htmlFor="companyLogo" className="text-purple-700 font-medium">Logo (Emoji o URL)</Label>
                   <Input
                     id="companyLogo"
                     value={config.companyLogo}
                     onChange={(e) => handleInputChange("companyLogo", e.target.value)}
                     placeholder="🍕"
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Información de Contacto</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Información de Contacto</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div>
-                  <Label htmlFor="phone">Teléfono</Label>
+                  <Label htmlFor="phone" className="text-purple-700 font-medium">Teléfono</Label>
                   <Input
                     id="phone"
                     value={config.phone}
                     onChange={(e) => handleInputChange("phone", e.target.value)}
                     placeholder="+57 300 123 4567"
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="address">Dirección</Label>
+                  <Label htmlFor="address" className="text-purple-700 font-medium">Dirección</Label>
                   <Input
                     id="address"
                     value={config.address}
                     onChange={(e) => handleInputChange("address", e.target.value)}
                     placeholder="Calle 123 #45-67, Bogotá, Colombia"
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
               </CardContent>
@@ -242,94 +271,102 @@ export default function WebAdminPage() {
 
           {/* Content Tab */}
           <TabsContent value="content" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Sección Principal (Hero)</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Sección Principal (Hero)</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div>
-                  <Label htmlFor="heroTitle">Título Principal</Label>
+                  <Label htmlFor="heroTitle" className="text-purple-700 font-medium">Título Principal</Label>
                   <Input
                     id="heroTitle"
                     value={config.heroTitle}
                     onChange={(e) => handleInputChange("heroTitle", e.target.value)}
                     placeholder="Sabores que Conquistan"
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="heroDescription">Descripción</Label>
+                  <Label htmlFor="heroDescription" className="text-purple-700 font-medium">Descripción</Label>
                   <Textarea
                     id="heroDescription"
                     value={config.heroDescription}
                     onChange={(e) => handleInputChange("heroDescription", e.target.value)}
                     placeholder="Descripción atractiva de tu negocio..."
                     rows={3}
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="heroButtonText">Botón Principal</Label>
+                    <Label htmlFor="heroButtonText" className="text-purple-700 font-medium">Botón Principal</Label>
                     <Input
                       id="heroButtonText"
                       value={config.heroButtonText}
                       onChange={(e) => handleInputChange("heroButtonText", e.target.value)}
                       placeholder="🛒 Pedir Ahora"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="heroSecondaryButtonText">Botón Secundario</Label>
+                    <Label htmlFor="heroSecondaryButtonText" className="text-purple-700 font-medium">Botón Secundario</Label>
                     <Input
                       id="heroSecondaryButtonText"
                       value={config.heroSecondaryButtonText}
                       onChange={(e) => handleInputChange("heroSecondaryButtonText", e.target.value)}
                       placeholder="📱 Ver Menú"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Banner Promocional</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Banner Promocional</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div>
-                  <Label htmlFor="promoTitle">Título de la Promoción</Label>
+                  <Label htmlFor="promoTitle" className="text-purple-700 font-medium">Título de la Promoción</Label>
                   <Input
                     id="promoTitle"
                     value={config.promoTitle}
                     onChange={(e) => handleInputChange("promoTitle", e.target.value)}
                     placeholder="¡50% OFF en tu Primer Pedido!"
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="promoDescription">Descripción de la Promoción</Label>
+                  <Label htmlFor="promoDescription" className="text-purple-700 font-medium">Descripción de la Promoción</Label>
                   <Textarea
                     id="promoDescription"
                     value={config.promoDescription}
                     onChange={(e) => handleInputChange("promoDescription", e.target.value)}
                     placeholder="Descripción de la oferta..."
                     rows={2}
+                    className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                   />
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="promoDiscount">Descuento</Label>
+                    <Label htmlFor="promoDiscount" className="text-purple-700 font-medium">Descuento</Label>
                     <Input
                       id="promoDiscount"
                       value={config.promoDiscount}
                       onChange={(e) => handleInputChange("promoDiscount", e.target.value)}
                       placeholder="50%"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="promoButtonText">Botón de la Promoción</Label>
+                    <Label htmlFor="promoButtonText" className="text-purple-700 font-medium">Botón de la Promoción</Label>
                     <Input
                       id="promoButtonText"
                       value={config.promoButtonText}
                       onChange={(e) => handleInputChange("promoButtonText", e.target.value)}
                       placeholder="🎯 Reclamar Oferta"
+                      className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                     />
                   </div>
                 </div>
@@ -339,63 +376,63 @@ export default function WebAdminPage() {
 
           {/* Design Tab */}
           <TabsContent value="design" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Colores del Sitio</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Colores del Sitio</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div className="grid md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="primaryColor">Color Primario</Label>
+                    <Label htmlFor="primaryColor" className="text-purple-700 font-medium">Color Primario</Label>
                     <div className="flex gap-2">
                       <Input
                         id="primaryColor"
                         type="color"
                         value={config.primaryColor}
                         onChange={(e) => handleInputChange("primaryColor", e.target.value)}
-                        className="w-16 h-10 p-1"
+                        className="w-16 h-10 p-1 border-purple-300"
                       />
                       <Input
                         value={config.primaryColor}
                         onChange={(e) => handleInputChange("primaryColor", e.target.value)}
                         placeholder="#f97316"
-                        className="flex-1"
+                        className="flex-1 border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="secondaryColor">Color Secundario</Label>
+                    <Label htmlFor="secondaryColor" className="text-purple-700 font-medium">Color Secundario</Label>
                     <div className="flex gap-2">
                       <Input
                         id="secondaryColor"
                         type="color"
                         value={config.secondaryColor}
                         onChange={(e) => handleInputChange("secondaryColor", e.target.value)}
-                        className="w-16 h-10 p-1"
+                        className="w-16 h-10 p-1 border-purple-300"
                       />
                       <Input
                         value={config.secondaryColor}
                         onChange={(e) => handleInputChange("secondaryColor", e.target.value)}
                         placeholder="#dc2626"
-                        className="flex-1"
+                        className="flex-1 border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="accentColor">Color de Acento</Label>
+                    <Label htmlFor="accentColor" className="text-purple-700 font-medium">Color de Acento</Label>
                     <div className="flex gap-2">
                       <Input
                         id="accentColor"
                         type="color"
                         value={config.accentColor}
                         onChange={(e) => handleInputChange("accentColor", e.target.value)}
-                        className="w-16 h-10 p-1"
+                        className="w-16 h-10 p-1 border-purple-300"
                       />
                       <Input
                         value={config.accentColor}
                         onChange={(e) => handleInputChange("accentColor", e.target.value)}
                         placeholder="#7c3aed"
-                        className="flex-1"
+                        className="flex-1 border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
@@ -403,11 +440,11 @@ export default function WebAdminPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Vista Previa de Colores</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Vista Previa de Colores</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-6">
                 <div className="space-y-4">
                   <div
                     className="h-20 rounded-lg flex items-center justify-center text-white font-bold"
@@ -430,82 +467,88 @@ export default function WebAdminPage() {
 
           {/* Features Tab */}
           <TabsContent value="features" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Características Destacadas</CardTitle>
+            <Card className="border-purple-200 shadow-sm">
+              <CardHeader className="bg-purple-50 border-b border-purple-200">
+                <CardTitle className="text-purple-900">Características Destacadas</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 pt-6">
                 <div className="space-y-4">
-                  <h4 className="font-semibold">Característica 1</h4>
+                  <h4 className="font-semibold text-purple-900">Característica 1</h4>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="feature1Title">Título</Label>
+                      <Label htmlFor="feature1Title" className="text-purple-700 font-medium">Título</Label>
                       <Input
                         id="feature1Title"
                         value={config.feature1Title}
                         onChange={(e) => handleInputChange("feature1Title", e.target.value)}
                         placeholder="Entrega Rápida"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="feature1Description">Descripción</Label>
+                      <Label htmlFor="feature1Description" className="text-purple-700 font-medium">Descripción</Label>
                       <Input
                         id="feature1Description"
                         value={config.feature1Description}
                         onChange={(e) => handleInputChange("feature1Description", e.target.value)}
                         placeholder="En 30 minutos o menos"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
                 </div>
 
-                <Separator />
+                <Separator className="bg-purple-200" />
 
                 <div className="space-y-4">
-                  <h4 className="font-semibold">Característica 2</h4>
+                  <h4 className="font-semibold text-purple-900">Característica 2</h4>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="feature2Title">Título</Label>
+                      <Label htmlFor="feature2Title" className="text-purple-700 font-medium">Título</Label>
                       <Input
                         id="feature2Title"
                         value={config.feature2Title}
                         onChange={(e) => handleInputChange("feature2Title", e.target.value)}
                         placeholder="Abierto 24/7"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="feature2Description">Descripción</Label>
+                      <Label htmlFor="feature2Description" className="text-purple-700 font-medium">Descripción</Label>
                       <Input
                         id="feature2Description"
                         value={config.feature2Description}
                         onChange={(e) => handleInputChange("feature2Description", e.target.value)}
                         placeholder="Siempre disponible para ti"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
                 </div>
 
-                <Separator />
+                <Separator className="bg-purple-200" />
 
                 <div className="space-y-4">
-                  <h4 className="font-semibold">Característica 3</h4>
+                  <h4 className="font-semibold text-purple-900">Característica 3</h4>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="feature3Title">Título</Label>
+                      <Label htmlFor="feature3Title" className="text-purple-700 font-medium">Título</Label>
                       <Input
                         id="feature3Title"
                         value={config.feature3Title}
                         onChange={(e) => handleInputChange("feature3Title", e.target.value)}
                         placeholder="Calidad Premium"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="feature3Description">Descripción</Label>
+                      <Label htmlFor="feature3Description" className="text-purple-700 font-medium">Descripción</Label>
                       <Input
                         id="feature3Description"
                         value={config.feature3Description}
                         onChange={(e) => handleInputChange("feature3Description", e.target.value)}
                         placeholder="Ingredientes frescos diarios"
+                        className="border-purple-300 focus:border-purple-500 focus:ring-purple-200"
                       />
                     </div>
                   </div>
@@ -516,16 +559,24 @@ export default function WebAdminPage() {
         </Tabs>
 
         {/* Action Buttons */}
-        <div className="flex justify-between items-center mt-8 p-4 bg-white rounded-lg border">
+        <div className="flex justify-between items-center mt-8 p-4 bg-white rounded-lg border border-purple-200 shadow-sm">
           <div className="flex items-center gap-2">
-            <Badge variant="outline">Configuración Web</Badge>
-            <span className="text-sm text-muted-foreground">Los cambios se guardan automáticamente</span>
+            <Badge variant="outline" className="border-purple-300 text-purple-700">Configuración Web</Badge>
+            <span className="text-sm text-purple-600">Los cambios se guardan automáticamente</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleReset}>
+            <Button 
+              variant="outline" 
+              onClick={handleReset}
+              className="border-purple-300 text-purple-700 hover:bg-purple-50 hover:border-purple-400"
+            >
               Restaurar Valores
             </Button>
-            <Button onClick={handlePreview} variant="outline">
+            <Button 
+              onClick={handlePreview} 
+              variant="outline"
+              className="border-purple-300 text-purple-700 hover:bg-purple-50 hover:border-purple-400"
+            >
               <Eye className="mr-2 h-4 w-4" />
               Ver Página Web
             </Button>

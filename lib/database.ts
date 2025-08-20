@@ -4,8 +4,8 @@ import mysql from 'mysql2/promise'
 export const dbConfig = {
   // Base de datos principal POS
   pos: {
-    host: '149.56.13.205',
-    port: 3307,
+    host: '148.113.218.187',
+    port: 3306,
     user: 'admin',
     password: 'Siscontri+2024*',
     database: 'siscontr_pos37',

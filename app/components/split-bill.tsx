@@ -10,13 +10,14 @@ import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useTables, type Table } from "../context/table-context"
 import { useRouter } from "next/navigation"
+import { formatPrice } from "@/lib/format-price"
 
 interface SplitBillProps {
   table: Table
 }
 
 interface ProductSelection {
-  productId: number
+  itemKey: string // Cambio de productId a itemKey para usar _orderItemId
   selected: boolean
   assignedTo: string[]
 }
@@ -32,7 +33,7 @@ export default function SplitBill({ table }: SplitBillProps) {
     getTableById,
   } = useTables()
   const [newPersonName, setNewPersonName] = useState("")
-  const [productSelections, setProductSelections] = useState<Record<number, ProductSelection>>({})
+  const [productSelections, setProductSelections] = useState<Record<string, ProductSelection>>({})
   const router = useRouter()
 
   // Obtener la mesa actualizada del contexto
@@ -49,11 +50,11 @@ export default function SplitBill({ table }: SplitBillProps) {
   const handleEnableSplitMode = () => {
     enableSplitMode(table.id)
     // Inicializar selecciones de productos
-    const initialSelections: Record<number, ProductSelection> = {}
+    const initialSelections: Record<string, ProductSelection> = {}
     currentTable.currentOrder?.items.forEach((item) => {
-      if (item.id) {
-        initialSelections[item.id] = {
-          productId: item.id,
+      if (item._orderItemId) {
+        initialSelections[item._orderItemId] = {
+          itemKey: item._orderItemId,
           selected: false,
           assignedTo: [],
         }
@@ -69,27 +70,27 @@ export default function SplitBill({ table }: SplitBillProps) {
     }
   }
 
-  const handleProductSelection = (productId: number, selected: boolean) => {
+  const handleProductSelection = (itemKey: string, selected: boolean) => {
     setProductSelections((prev) => ({
       ...prev,
-      [productId]: {
-        ...prev[productId],
+      [itemKey]: {
+        ...prev[itemKey],
         selected,
-        assignedTo: selected ? prev[productId]?.assignedTo || [] : [],
+        assignedTo: selected ? prev[itemKey]?.assignedTo || [] : [],
       },
     }))
   }
 
-  const handlePersonAssignment = (productId: number, personId: string, assigned: boolean) => {
+  const handlePersonAssignment = (itemKey: string, personId: string, assigned: boolean) => {
     setProductSelections((prev) => {
-      const current = prev[productId] || { productId, selected: true, assignedTo: [] }
+      const current = prev[itemKey] || { itemKey, selected: true, assignedTo: [] }
       const assignedTo = assigned
         ? [...current.assignedTo, personId]
         : current.assignedTo.filter((id) => id !== personId)
 
       return {
         ...prev,
-        [productId]: {
+        [itemKey]: {
           ...current,
           assignedTo,
         },
@@ -98,45 +99,114 @@ export default function SplitBill({ table }: SplitBillProps) {
   }
 
   const handleConfirmAssignments = () => {
-    // Procesar las asignaciones
-    Object.values(productSelections).forEach((selection) => {
-      if (selection.selected && selection.assignedTo.length > 0) {
-        const product = currentTable.currentOrder?.items.find((item) => item.id === selection.productId)
-        if (product) {
-          if (selection.assignedTo.length === 1) {
-            // Asignar a una sola persona
-            assignItemToPerson(table.id, selection.productId, selection.assignedTo[0], product.quantity)
-          } else {
-            // Compartir entre varias personas
-            shareItemBetweenPeople(table.id, selection.productId, selection.assignedTo, product.quantity)
+    console.log('=== INICIANDO ASIGNACIÓN DE PRODUCTOS ===')
+    console.log('Product selections:', productSelections)
+    console.log('Bills disponibles:', currentTable.currentOrder?.bills)
+    
+    if (!currentTable.currentOrder?.bills || currentTable.currentOrder.bills.length === 0) {
+      console.error('No hay bills disponibles')
+      return
+    }
+    
+    // Crear bills con items asignados directamente
+    const billsWithItems = currentTable.currentOrder.bills.map(bill => {
+      const billItems: any[] = []
+      let billSubtotal = 0
+      
+      console.log(`Procesando bill para ${bill.personName} (ID: ${bill.id})`)
+      
+      // Buscar productos asignados a esta persona
+      Object.entries(productSelections).forEach(([itemKey, selection]) => {
+        console.log(`Revisando selección para itemKey ${itemKey}:`, selection)
+        if (selection.selected && selection.assignedTo && selection.assignedTo.length > 0) {
+          console.log(`Producto seleccionado para ${bill.personName}, assignedTo:`, selection.assignedTo)
+          if (selection.assignedTo.includes(bill.id)) {
+            console.log(`Producto asignado a ${bill.personName}`)
+            const product = currentTable.currentOrder?.items.find((item) => item._orderItemId === itemKey)
+            if (product) {
+              console.log(`Asignando ${product.name} a ${bill.personName}`)
+              if (selection.assignedTo.length === 1) {
+                // Producto asignado solo a esta persona
+                billItems.push({
+                  productId: product.id,
+                  product: product,
+                  quantity: product.quantity,
+                  assignedTo: [bill.id],
+                  isShared: false,
+                })
+                billSubtotal += product.sell_price_inc_tax * product.quantity
+              } else {
+                // Producto compartido entre varias personas
+                const quantityPerPerson = product.quantity / selection.assignedTo.length
+                const pricePerPerson = product.sell_price_inc_tax / selection.assignedTo.length
+                billItems.push({
+                  productId: product.id,
+                  product: { ...product, sell_price_inc_tax: pricePerPerson },
+                  quantity: quantityPerPerson,
+                  assignedTo: selection.assignedTo,
+                  isShared: true,
+                })
+                billSubtotal += pricePerPerson * quantityPerPerson
+              }
+            }
           }
         }
+      })
+      
+      // No calcular impuestos adicionales ya que están incluidos en el precio
+      const total = billSubtotal
+      
+      console.log(`Bill para ${bill.personName}: subtotal=${billSubtotal}, total=${total}, items=${billItems.length}`)
+      
+      return {
+        ...bill,
+        items: billItems,
+        subtotal: billSubtotal,
+        tax: 0, // No hay impuestos adicionales
+        total: total,
       }
     })
-
-    // Polling para esperar a que los productos estén realmente asignados en los bills
-    const checkBillsReady = () => {
-      const bills = finalizeSplitBills(table.id)
-      const anyHasItems = bills.some(bill => bill.items && bill.items.length > 0)
-      if (anyHasItems) {
-        handleCheckoutSplit()
-      } else {
-        setTimeout(checkBillsReady, 30)
-      }
+    
+    console.log('=== BILLS FINALIZADOS ===')
+    console.log('Bills con items asignados:', billsWithItems)
+    
+    // Guardar directamente en localStorage
+    const checkoutData = {
+      tableId: table.id,
+      tableNumber: table.number,
+      bills: billsWithItems,
     }
-    checkBillsReady()
+    
+    console.log('Datos a guardar:', checkoutData)
+    localStorage.setItem("split-bills-checkout", JSON.stringify(checkoutData))
+    console.log('Datos guardados en localStorage, redirigiendo...')
+    
+    // Verificar que se guardó correctamente
+    const savedData = localStorage.getItem("split-bills-checkout")
+    console.log('Datos verificados en localStorage:', savedData)
+    
+    router.push("/split-checkout")
   }
 
   const handleCheckoutSplit = () => {
+    console.log('Iniciando checkout split...')
     const bills = finalizeSplitBills(table.id)
-    localStorage.setItem(
-      "split-bills-checkout",
-      JSON.stringify({
-        tableId: table.id,
-        tableNumber: table.number,
-        bills,
-      }),
-    )
+    console.log('Bills finalizados:', bills)
+    
+    if (bills.length === 0) {
+      console.error('No hay bills para procesar')
+      return
+    }
+    
+    const checkoutData = {
+      tableId: table.id,
+      tableNumber: table.number,
+      bills,
+    }
+    console.log('Datos de checkout:', checkoutData)
+    
+    localStorage.setItem("split-bills-checkout", JSON.stringify(checkoutData))
+    console.log('Datos guardados en localStorage, redirigiendo...')
     router.push("/split-checkout")
   }
 
@@ -174,34 +244,35 @@ export default function SplitBill({ table }: SplitBillProps) {
         <>
           {/* Paso 1: Configurar Personas */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">1. Personas en la Mesa</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">1. Personas en la Mesa</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2">
               <div className="flex gap-2">
                 <Input
                   placeholder="Nombre de la persona"
                   value={newPersonName}
                   onChange={(e) => setNewPersonName(e.target.value)}
                   onKeyPress={(e) => e.key === "Enter" && handleAddPerson()}
+                  className="text-sm"
                 />
-                <Button onClick={handleAddPerson} disabled={!newPersonName.trim()}>
+                <Button onClick={handleAddPerson} disabled={!newPersonName.trim()} size="sm">
                   Agregar
                 </Button>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1">
                 {bills.map((bill) => (
-                  <Badge key={bill.id} variant="secondary" className="flex items-center gap-1">
+                  <Badge key={bill.id} variant="secondary" className="flex items-center gap-1 text-xs">
                     <User className="h-3 w-3" />
                     {bill.personName}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-4 w-4 p-0 hover:bg-red-100"
+                      className="h-3 w-3 p-0 hover:bg-red-100"
                       onClick={() => removePersonFromBill(table.id, bill.id)}
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-2 w-2" />
                     </Button>
                   </Badge>
                 ))}
@@ -218,46 +289,46 @@ export default function SplitBill({ table }: SplitBillProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 {currentTable.currentOrder.items.map((item) => {
-                  if (!item.id) return null
-                  const selection = productSelections[item.id] || {
-                    productId: item.id,
+                  if (!item._orderItemId) return null
+                  const selection = productSelections[item._orderItemId] || {
+                    itemKey: item._orderItemId,
                     selected: false,
                     assignedTo: [],
                   }
 
                   return (
-                    <div key={item.id} className="border rounded-lg p-4">
-                      <div className="flex items-center gap-3 mb-3">
+                    <div key={item._orderItemId} className="border rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
                         <Checkbox
                           checked={selection.selected}
-                          onCheckedChange={(checked) => handleProductSelection(item.id!, checked as boolean)}
+                          onCheckedChange={(checked) => handleProductSelection(item._orderItemId!, checked as boolean)}
                         />
                         <img
                           src={item.image || "/placeholder.svg"}
                           alt={item.name}
-                          className="w-12 h-12 object-cover rounded"
+                          className="w-8 h-8 object-cover rounded"
                         />
                         <div className="flex-1">
-                          <h4 className="font-medium">{item.name}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            ${(Number(item.sell_price_inc_tax) || 0).toFixed(2)} × {item.quantity} = ${((Number(item.sell_price_inc_tax) || 0) * item.quantity).toFixed(2)}
+                          <h4 className="font-medium text-sm">{item.name}</h4>
+                          <p className="text-xs text-muted-foreground">
+                            {formatPrice(Number(item.sell_price_inc_tax) || 0)} × {item.quantity} = {formatPrice((Number(item.sell_price_inc_tax) || 0) * item.quantity)}
                           </p>
                         </div>
                       </div>
 
                       {selection.selected && (
-                        <div className="ml-6 space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">¿Quién va a pagar este producto?</p>
-                          <div className="grid grid-cols-2 gap-2">
+                        <div className="ml-5 space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">¿Quién va a pagar este producto?</p>
+                          <div className="grid grid-cols-2 gap-1">
                             {bills.map((bill) => (
-                              <label key={bill.id} className="flex items-center space-x-2 cursor-pointer">
+                              <label key={bill.id} className="flex items-center space-x-1 cursor-pointer">
                                 <Checkbox
                                   checked={selection.assignedTo.includes(bill.id)}
                                   onCheckedChange={(checked) =>
-                                    handlePersonAssignment(item.id!, bill.id, checked as boolean)
+                                    handlePersonAssignment(item._orderItemId!, bill.id, checked as boolean)
                                   }
                                 />
-                                <span className="text-sm">{bill.personName}</span>
+                                <span className="text-xs">{bill.personName}</span>
                               </label>
                             ))}
                           </div>
@@ -296,11 +367,11 @@ export default function SplitBill({ table }: SplitBillProps) {
 
                 <div className="space-y-2">
                   {selectedProducts.map((selection) => {
-                    const product = currentTable.currentOrder?.items.find((item) => item.id === selection.productId)
+                    const product = currentTable.currentOrder?.items.find((item) => item._orderItemId === selection.itemKey)
                     if (!product) return null
 
                     return (
-                      <div key={selection.productId} className="flex justify-between text-sm">
+                      <div key={selection.itemKey} className="flex justify-between text-sm">
                         <span>{product.name}</span>
                         <span>
                           {selection.assignedTo.length === 1

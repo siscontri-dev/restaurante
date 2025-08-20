@@ -8,14 +8,24 @@ import { PlusCircle, GripVertical } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "../context/cart-context"
 import type { Product } from "@/lib/services/product-service"
+import { formatPrice } from "@/lib/format-price"
+
+// Eliminar la declaración local de Product para evitar conflicto
+// interface Product {
+//   id: number;
+//   name: string;
+//   category_id: number;
+//   // ...otros campos existentes
+// }
 
 interface ProductGridProps {
   category: string
   searchQuery: string
   compact?: boolean
+  onProductClick?: (product: Product) => void
 }
 
-export default function ProductGrid({ category, searchQuery, compact = false }: ProductGridProps) {
+export default function ProductGrid({ category, searchQuery, compact = false, onProductClick }: ProductGridProps) {
   const { addToCart } = useCart()
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,24 +37,31 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
         setLoading(true)
         const token = localStorage.getItem('token')
         
+        console.log('🔑 Token encontrado:', !!token)
+        
         if (!token) {
           setError('No hay token de autenticación')
           return
         }
 
+        console.log('📡 Haciendo petición a /api/products...')
         const response = await fetch('/api/products?pageSize=1000', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         })
 
+        console.log('📊 Respuesta del servidor:', response.status, response.ok)
+
         if (!response.ok) {
           const errorText = await response.text()
-          console.error('Error response:', response.status, errorText)
+          console.error('❌ Error response:', response.status, errorText)
           throw new Error(`Error al obtener productos: ${response.status}`)
         }
 
         const data = await response.json()
+        console.log('📦 Datos recibidos:', data)
+        console.log('📋 Productos en respuesta:', data.products?.length || 0)
         
         // Eliminar duplicados usando un Map basado en el ID
         const uniqueProductsMap = new Map()
@@ -54,9 +71,11 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
           })
         }
         
-        setProducts(Array.from(uniqueProductsMap.values()))
+        const finalProducts = Array.from(uniqueProductsMap.values())
+        console.log('🛒 Productos finales:', finalProducts.length)
+        setProducts(finalProducts)
       } catch (err) {
-        console.error('Error fetching products:', err)
+        console.error('❌ Error fetching products:', err)
         setError('Error al cargar productos')
       } finally {
         setLoading(false)
@@ -66,11 +85,24 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
     fetchProducts()
   }, [])
 
+  // Filtrar productos por categoría seleccionada
   const filteredProducts = products.filter((product) => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
-  })
+    if (category === 'all') return true;
+    if (category === 'otros') {
+      // Mostrar productos sin category_id
+      return !('category_id' in product) || product.category_id === null || product.category_id === undefined;
+    }
+    // Forzar acceso dinámico para category_id
+    return String((product as any)['category_id']) === String(category);
+  }).filter((product) =>
+    product.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  console.log("PRODUCTOS:", products);
+  console.log("CATEGORÍA SELECCIONADA:", category);
+  console.log("FILTRADOS:", filteredProducts);
+  console.log("LOADING:", loading);
+  console.log("ERROR:", error);
 
   const handleDragStart = (e: React.DragEvent, product: Product) => {
     if (!e) return // Safety check
@@ -110,25 +142,42 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
         {filteredProducts.map((product) => (
           <Card
             key={product.id}
-            className="overflow-hidden transition-all duration-200 hover:shadow-md cursor-grab active:cursor-grabbing group"
+            className="glass-card overflow-hidden hover-lift cursor-grab active:cursor-grabbing group border-0"
             draggable
             onDragStart={(e) => {
               e.preventDefault = e.preventDefault || (() => {})
               handleDragStart(e, product)
             }}
-            onClick={() => addToCart({ ...product, order_area_id: product.order_area_id ?? null })}
+            onClick={() => onProductClick ? onProductClick(product) : addToCart({ ...product, order_area_id: product.order_area_id ?? null })}
           >
-            <div className="relative aspect-square">
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 z-10">
-                <GripVertical className="h-4 w-4 text-white mr-1" />
-                <PlusCircle className="h-4 w-4 text-white" />
+            <div className="relative aspect-square bg-gradient-to-br from-accent/20 to-accent/10">
+              <div className="absolute inset-0 flex items-center justify-center bg-primary/30 opacity-0 transition-all duration-300 group-hover:opacity-100 z-10 backdrop-blur-sm">
+                <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1.5">
+                  <GripVertical className="h-4 w-4 text-white" />
+                  <PlusCircle className="h-4 w-4 text-white" />
+                </div>
               </div>
-              <Image src={product.image || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
+              {product.image && product.image !== "/placeholder.svg" && product.image !== "" && (
+                <Image 
+                  src={product.image} 
+                  alt={product.name} 
+                  fill 
+                  className="object-cover transition-transform duration-300 group-hover:scale-110"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              )}
             </div>
-            <CardContent className="p-2">
-              <div>
-                <h3 className="font-medium text-sm line-clamp-1">{product.name}</h3>
-                <p className="text-sm text-muted-foreground">${Number(product.sell_price_inc_tax).toFixed(2)}</p>
+            <CardContent className="p-3 bg-gradient-to-b from-white/90 to-white/70">
+              <div className="space-y-1">
+                <h3 className="font-medium text-sm line-clamp-1 text-foreground group-hover:text-primary transition-colors">
+                  {product.name}
+                </h3>
+                <p className="text-sm font-bold gradient-text">
+                  {formatPrice(Number(product.sell_price_inc_tax) || 0)}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -136,7 +185,12 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
 
         {filteredProducts.length === 0 && (
           <div className="col-span-full py-8 text-center">
-            <p className="text-muted-foreground text-sm">No se encontraron productos</p>
+            <div className="glass-card p-6 max-w-sm mx-auto">
+              <div className="w-12 h-12 bg-accent/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <GripVertical className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="text-muted-foreground text-sm">No se encontraron productos</p>
+            </div>
           </div>
         )}
       </div>
@@ -144,37 +198,68 @@ export default function ProductGrid({ category, searchQuery, compact = false }: 
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 p-6">
       {filteredProducts.map((product) => (
         <Card
           key={product.id}
-          className="overflow-hidden transition-all duration-200 hover:scale-105 hover:shadow-md cursor-grab active:cursor-grabbing group"
+          className="glass-card overflow-hidden hover-lift cursor-grab active:cursor-grabbing group border-0 relative"
           draggable
           onDragStart={(e) => {
             e.preventDefault = e.preventDefault || (() => {})
             handleDragStart(e, product)
           }}
-          onClick={() => addToCart({ ...product, order_area_id: product.order_area_id ?? null })}
+          onClick={() => onProductClick ? onProductClick(product) : addToCart({ ...product, order_area_id: product.order_area_id ?? null })}
         >
-          <div className="relative aspect-square">
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 z-10">
-              <GripVertical className="h-6 w-6 text-white mr-2" />
-              <PlusCircle className="h-6 w-6 text-white" />
+          {/* Efecto de brillo en hover */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 transition-transform duration-700 opacity-0 group-hover:opacity-100 group-hover:translate-x-full z-10" />
+          
+          <div className="relative aspect-square bg-gradient-to-br from-accent/20 to-accent/10 overflow-hidden">
+            <div className="absolute inset-0 flex items-center justify-center bg-primary/30 opacity-0 transition-all duration-300 group-hover:opacity-100 z-20 backdrop-blur-sm">
+              <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg">
+                <GripVertical className="h-5 w-5 text-white" />
+                <PlusCircle className="h-5 w-5 text-white" />
+              </div>
             </div>
-            <Image src={product.image || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
+            {product.image && product.image !== "/placeholder.svg" && product.image !== "" && (
+              <Image 
+                src={product.image} 
+                alt={product.name} 
+                fill 
+                className="object-cover transition-transform duration-300 group-hover:scale-110"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+            )}
           </div>
-          <CardContent className="p-3">
-            <div>
-              <h3 className="font-medium line-clamp-1">{product.name}</h3>
-              <p className="text-sm text-muted-foreground">${Number(product.sell_price_inc_tax).toFixed(2)}</p>
+          <CardContent className="p-4 bg-gradient-to-b from-white/95 to-white/85 relative z-10">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm line-clamp-2 text-foreground group-hover:text-primary transition-colors">
+                {product.name}
+              </h3>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold gradient-text">
+                  {formatPrice(Number(product.sell_price_inc_tax) || 0)}
+                </p>
+                <div className="w-2 h-2 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 group-hover:scale-150"></div>
+              </div>
             </div>
           </CardContent>
         </Card>
       ))}
 
       {filteredProducts.length === 0 && (
-        <div className="col-span-full py-12 text-center">
-          <p className="text-muted-foreground">No se encontraron productos</p>
+        <div className="col-span-full py-16 text-center">
+          <div className="max-w-md mx-auto">
+            <div className="glass-card p-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-accent/30 to-accent/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <GripVertical className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold gradient-text mb-2">No se encontraron productos</h3>
+              <p className="text-muted-foreground text-sm">Intenta cambiar la categoría o el término de búsqueda</p>
+            </div>
+          </div>
         </div>
       )}
     </div>

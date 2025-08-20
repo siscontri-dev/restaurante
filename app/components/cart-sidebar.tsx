@@ -1,79 +1,201 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react"
+import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown, ChevronUp } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { useCart } from "../context/cart-context"
+import { formatPrice } from "@/lib/format-price"
 
-export default function CartSidebar() {
+type CartSidebarProps = {
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  products?: any[]; // Lista de productos para mostrar nombres en combos
+}
+
+export default function CartSidebar({ searchQuery, setSearchQuery, products = [] }: CartSidebarProps) {
   const router = useRouter()
-  const { cart, removeFromCart, updateQuantity, cartTotal, itemCount } = useCart()
+  const { cart, removeFromCart, updateQuantity, cartTotal, itemCount, isLoading } = useCart()
+  const [expandedCombos, setExpandedCombos] = useState<Set<number>>(new Set())
+  
+  console.log('🛒 CartSidebar - Estado del carrito:', cart)
+  console.log('🛒 CartSidebar - Cantidad de items:', itemCount)
+  console.log('🛒 CartSidebar - Total del carrito:', cartTotal)
+  console.log('🛒 CartSidebar - isLoading:', isLoading)
 
   const handleCheckout = () => {
+    if (cart.length === 0) return
+    
+    // Guardar el pedido en localStorage antes de ir a table-checkout
+    const tempOrder = {
+      tableId: 0,
+      tableNumber: 0,
+      items: cart.map(item => ({
+        id: item.id!,
+        name: item.name,
+        price: item.sell_price_inc_tax,
+        quantity: item.quantity,
+        image: item.image || "",
+        order_area_id: item.order_area_id || null
+      })),
+      total: cart.reduce((total, item) => total + item.sell_price_inc_tax * item.quantity, 0)
+    }
+    
+    localStorage.setItem("temp-checkout-order", JSON.stringify(tempOrder))
     router.push("/table-checkout")
   }
 
+  const toggleComboExpansion = (itemId: number) => {
+    setExpandedCombos(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId)
+      } else {
+        newSet.add(itemId)
+      }
+      return newSet
+    })
+  }
+
+  const isCombo = (item: any) => {
+    return item.combo && Array.isArray(item.combo) && item.combo.length > 0
+  }
+
+  const getProductName = (productId: number) => {
+    const product = products.find(p => p.id === productId)
+    return product ? product.name : `Producto ${productId}`
+  }
+
   return (
-    <div className="flex w-80 flex-col border-l bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="flex items-center text-lg font-semibold">
-          <ShoppingCart className="mr-2 h-5 w-5" />
-          Cart
-        </h2>
-        <span className="rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">
-          {itemCount} items
-        </span>
+    <div className="flex w-80 flex-col border-l border-border bg-card/50 backdrop-blur-sm">
+      {/* Header del carrito */}
+      <div className="flex items-center justify-between border-b border-border p-6 bg-gradient-to-r from-primary/5 to-secondary/5">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <ShoppingCart className="h-5 w-5 text-primary" />
+          </div>
+          <h2 className="text-xl font-bold text-foreground">Cart</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground shadow-lg">
+            {itemCount} items
+          </span>
+        </div>
+      </div>
+      {/* Barra de búsqueda funcional */}
+      <div className="px-6 pt-4 pb-2">
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar productos..."
+            className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary/20 w-full"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
-        {cart.length === 0 ? (
+      {/* Contenido del carrito */}
+      <div className="flex-1 overflow-auto p-6">
+        {isLoading ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <ShoppingCart className="mb-2 h-12 w-12 text-muted-foreground" />
-            <h3 className="font-medium">Your cart is empty</h3>
+            <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+            <h3 className="font-semibold text-foreground mb-2">Cargando productos...</h3>
+            <p className="text-sm text-muted-foreground">Espera un momento</p>
+          </div>
+        ) : cart.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="w-20 h-20 bg-accent/30 rounded-full flex items-center justify-center mb-4">
+              <ShoppingCart className="h-10 w-10 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Your cart is empty</h3>
             <p className="text-sm text-muted-foreground">Add items to get started</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {cart.map((item) => (
-              <div key={item.id} className="flex gap-3">
-                <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border">
-                  <img src={item.image || "/placeholder.svg"} alt={item.name} className="h-full w-full object-cover" />
-                </div>
-                <div className="flex flex-1 flex-col">
-                  <div className="flex justify-between">
-                    <h3 className="font-medium line-clamp-1">{item.name}</h3>
-                    <p className="font-medium">${(Number(item.sell_price_inc_tax) * item.quantity).toFixed(2)}</p>
+          <div className="space-y-2">
+            {cart.map((item, index) => (
+              <div key={item.id || index} className="group bg-card border border-border rounded-lg p-2 hover:border-primary/30 hover:shadow-sm transition-all duration-300">
+                <div className="flex gap-2">
+                  <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md border border-border group-hover:border-primary/30 transition-colors">
+                    <img src={item.image || "/placeholder.svg"} alt={item.name} className="h-full w-full object-cover" />
                   </div>
-                  <p className="text-sm text-muted-foreground">${Number(item.sell_price_inc_tax).toFixed(2)} each</p>
-                  <div className="mt-auto flex items-center justify-between">
-                    <div className="flex items-center">
+                  <div className="flex flex-1 flex-col">
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-foreground text-sm line-clamp-1 group-hover:text-primary transition-colors">
+                          {item.name}
+                        </h3>
+                        {isCombo(item) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 p-0 text-muted-foreground hover:text-primary transition-colors"
+                            onClick={() => toggleComboExpansion(item.id!)}
+                          >
+                            {expandedCombos.has(item.id!) ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                      <p className="font-bold text-primary text-sm">
+                        {formatPrice(Number(item.sell_price_inc_tax) * item.quantity)}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {formatPrice(Number(item.sell_price_inc_tax))} each
+                    </p>
+                    
+                    {/* Productos del combo expandido */}
+                    {isCombo(item) && expandedCombos.has(item.id!) && (
+                      <div className="mb-2 pl-4 border-l-2 border-primary/20">
+                        <p className="text-xs text-muted-foreground mb-1 font-medium">Productos incluidos:</p>
+                        <div className="space-y-1">
+                          {item.combo.map((productId: number, comboIndex: number) => (
+                            <div key={comboIndex} className="flex items-center gap-2">
+                              <div className="w-1 h-1 bg-primary/40 rounded-full"></div>
+                              <span className="text-xs text-muted-foreground">
+                                {getProductName(productId)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 bg-accent/30 rounded-md p-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 hover:bg-primary hover:text-primary-foreground transition-colors"
+                          onClick={() => updateQuantity(item.id!, item.quantity - 1)}
+                        >
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-6 text-center font-bold text-foreground text-xs">{item.quantity}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 hover:bg-primary hover:text-primary-foreground transition-colors"
+                          onClick={() => updateQuantity(item.id!, item.quantity + 1)}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="icon"
-                        className="h-7 w-7"
-                        onClick={() => updateQuantity(item.id!, item.quantity - 1)}
+                        className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        onClick={() => removeFromCart(item.id!)}
                       >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-8 text-center">{item.quantity}</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => updateQuantity(item.id!, item.quantity + 1)}
-                      >
-                        <Plus className="h-3 w-3" />
+                        <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground"
-                      onClick={() => removeFromCart(item.id!)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
               </div>
@@ -82,18 +204,24 @@ export default function CartSidebar() {
         )}
       </div>
 
-      <div className="border-t p-4">
-        <div className="mb-4 space-y-2">
-          <div className="flex justify-between">
-            <p>Subtotal</p>
-            <p>${cartTotal.toFixed(2)}</p>
+      {/* Footer con total y checkout */}
+      <div className="border-t border-border p-6 bg-gradient-to-r from-accent/20 to-accent/10">
+        <div className="mb-6 space-y-3">
+          <div className="flex justify-between items-center p-3 bg-card rounded-lg border border-border">
+            <p className="font-medium text-foreground">Subtotal</p>
+                            <p className="font-bold text-primary text-lg">{formatPrice(cartTotal)}</p>
           </div>
-          <div className="flex justify-between font-medium">
-            <p>Total</p>
-            <p>${cartTotal.toFixed(2)}</p>
+          <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg border border-primary/20">
+            <p className="font-bold text-foreground">Total</p>
+                            <p className="font-bold text-primary text-xl">{formatPrice(cartTotal)}</p>
           </div>
         </div>
-        <Button className="w-full" size="lg" disabled={cart.length === 0} onClick={handleCheckout}>
+        <Button 
+          className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50" 
+          size="lg" 
+          disabled={cart.length === 0} 
+          onClick={handleCheckout}
+        >
           Checkout Presencial
         </Button>
       </div>

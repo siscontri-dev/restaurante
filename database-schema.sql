@@ -6,20 +6,35 @@ CREATE DATABASE IF NOT EXISTS siscontr_pos37 CHARACTER SET utf8mb4 COLLATE utf8m
 
 USE siscontr_pos37;
 
+-- Tabla de categorías
+CREATE TABLE IF NOT EXISTS categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    business_id INT NOT NULL,
+    isActive BOOLEAN DEFAULT TRUE,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_business_id (business_id),
+    INDEX idx_active (isActive)
+);
+
 -- Tabla de productos
 CREATE TABLE IF NOT EXISTS products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    sku VARCHAR(100) NOT NULL UNIQUE,
+    business_id INT NOT NULL,
+    category_id INT NOT NULL,
+    sku VARCHAR(100) NOT NULL,
     price DECIMAL(10, 2) NOT NULL,
     image VARCHAR(500) NULL,
-    category VARCHAR(100) NOT NULL,
     preparationArea ENUM('kitchen', 'cafeteria', 'bar') DEFAULT 'kitchen',
     isActive BOOLEAN DEFAULT TRUE,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
+    INDEX idx_business_id (business_id),
+    INDEX idx_category_id (category_id),
     INDEX idx_sku (sku),
-    INDEX idx_category (category),
     INDEX idx_preparation_area (preparationArea),
     INDEX idx_active (isActive)
 );
@@ -119,23 +134,32 @@ CREATE TABLE IF NOT EXISTS kitchen_orders (
     INDEX idx_created_at (createdAt)
 );
 
--- Insertar datos de ejemplo para productos
-INSERT INTO products (name, sku, price, image, category, preparationArea) VALUES
-('Cheeseburger', 'BURG001', 8.99, '/classic-beef-burger.png', 'food', 'kitchen'),
-('Pepperoni Pizza', 'PIZZA001', 12.99, '/delicious-pizza.png', 'food', 'kitchen'),
-('Caesar Salad', 'SALAD001', 7.99, '/vibrant-mixed-salad.png', 'food', 'kitchen'),
-('Chicken Wings', 'WING001', 9.99, '/crispy-chicken-wings.png', 'food', 'kitchen'),
-('French Fries', 'FRIES001', 3.99, '/crispy-french-fries.png', 'food', 'kitchen'),
-('Coca Cola', 'SODA001', 2.49, '/refreshing-cola.png', 'drinks', 'bar'),
-('Iced Tea', 'TEA001', 2.99, '/iced-tea.png', 'drinks', 'bar'),
-('Orange Juice', 'JUICE001', 3.49, '/glass-of-orange-juice.png', 'drinks', 'bar'),
-('Latte', 'COFFEE001', 4.49, '/latte-coffee.png', 'drinks', 'cafeteria'),
-('Bottled Water', 'WATER001', 1.99, '/bottled-water.png', 'drinks', 'bar'),
-('Chocolate Cake', 'CAKE001', 5.99, '/chocolate-cake-slice.png', 'desserts', 'cafeteria'),
-('Cheesecake', 'CAKE002', 6.49, '/cheesecake-slice.png', 'desserts', 'cafeteria'),
-('Ice Cream', 'ICE001', 4.99, '/ice-cream-sundae.png', 'desserts', 'cafeteria'),
-('Apple Pie', 'PIE001', 5.49, '/apple-pie-slice.png', 'desserts', 'cafeteria'),
-('Brownie', 'BROW001', 3.99, '/chocolate-brownie.png', 'desserts', 'cafeteria')
+-- Insertar datos de ejemplo para categorías (business_id = 165)
+INSERT INTO categories (name, business_id) VALUES
+('Comidas', 165),
+('Bebidas', 165),
+('Postres', 165),
+('BENDICION', 165),
+('FERRETERÍA', 165)
+ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP;
+
+-- Insertar datos de ejemplo para productos (business_id = 165)
+INSERT INTO products (name, business_id, category_id, sku, price, image, preparationArea) VALUES
+('Cheeseburger', 165, 1, 'BURG001', 8.99, '/classic-beef-burger.png', 'kitchen'),
+('Pepperoni Pizza', 165, 1, 'PIZZA001', 12.99, '/delicious-pizza.png', 'kitchen'),
+('Caesar Salad', 165, 1, 'SALAD001', 7.99, '/vibrant-mixed-salad.png', 'kitchen'),
+('Chicken Wings', 165, 1, 'WING001', 9.99, '/crispy-chicken-wings.png', 'kitchen'),
+('French Fries', 165, 1, 'FRIES001', 3.99, '/crispy-french-fries.png', 'kitchen'),
+('Coca Cola', 165, 2, 'SODA001', 2.49, '/refreshing-cola.png', 'bar'),
+('Iced Tea', 165, 2, 'TEA001', 2.99, '/iced-tea.png', 'bar'),
+('Orange Juice', 165, 2, 'JUICE001', 3.49, '/glass-of-orange-juice.png', 'bar'),
+('Latte', 165, 2, 'COFFEE001', 4.49, '/latte-coffee.png', 'cafeteria'),
+('Bottled Water', 165, 2, 'WATER001', 1.99, '/bottled-water.png', 'bar'),
+('Chocolate Cake', 165, 3, 'CAKE001', 5.99, '/chocolate-cake-slice.png', 'cafeteria'),
+('Cheesecake', 165, 3, 'CAKE002', 6.49, '/cheesecake-slice.png', 'cafeteria'),
+('Ice Cream', 165, 3, 'ICE001', 4.99, '/ice-cream-sundae.png', 'cafeteria'),
+('Apple Pie', 165, 3, 'PIE001', 5.49, '/apple-pie-slice.png', 'cafeteria'),
+('Brownie', 165, 3, 'BROW001', 3.99, '/chocolate-brownie.png', 'cafeteria')
 ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP;
 
 -- Insertar datos de ejemplo para mesas

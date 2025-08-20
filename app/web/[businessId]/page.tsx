@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, use, useMemo, useRef } from "react"
 import {
   ShoppingCart,
   Star,
@@ -20,61 +19,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { useCart } from "../context/cart-context"
+import { useCart } from "../../context/cart-context"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-
-// Productos de ejemplo para la página web
-const webProducts = [
-  {
-    id: 1,
-    sku: "PIZZA001",
-    name: "Pizza Margherita",
-    sell_price_inc_tax: 12.99,
-    image: "/delicious-pizza.png",
-    category: "food",
-  },
-  {
-    id: 2,
-    sku: "BURGER001",
-    name: "Hamburguesa Clásica",
-    sell_price_inc_tax: 8.99,
-    image: "/classic-beef-burger.png",
-    category: "food",
-  },
-  {
-    id: 3,
-    sku: "SALAD001",
-    name: "Ensalada Mixta",
-    sell_price_inc_tax: 6.99,
-    image: "/vibrant-mixed-salad.png",
-    category: "food",
-  },
-  {
-    id: 4,
-    sku: "COFFEE001",
-    name: "Café Latte",
-    sell_price_inc_tax: 3.99,
-    image: "/latte-coffee.png",
-    category: "drinks",
-  },
-  {
-    id: 5,
-    sku: "COLA001",
-    name: "Cola Refrescante",
-    sell_price_inc_tax: 2.99,
-    image: "/refreshing-cola.png",
-    category: "drinks",
-  },
-  {
-    id: 6,
-    sku: "CAKE001",
-    name: "Tarta de Chocolate",
-    sell_price_inc_tax: 5.99,
-    image: "/chocolate-cake-slice.png",
-    category: "desserts",
-  },
-]
+import { formatPrice } from "@/lib/format-price"
 
 interface WebConfig {
   heroTitle: string
@@ -130,12 +78,20 @@ const defaultConfig: WebConfig = {
   feature3Description: "Ingredientes frescos diarios",
 }
 
-export default function WebPage() {
+export default function WebPage({ params }: { params: Promise<{ businessId: string }> }) {
+  const resolvedParams = use(params)
+  const businessId = typeof resolvedParams === 'object' && resolvedParams !== null ? resolvedParams.businessId : undefined
   const { addToCart, removeFromCart, updateQuantity, cart, cartTotal, itemCount, clearCart } = useCart()
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [config, setConfig] = useState<WebConfig>(defaultConfig)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const router = useRouter()
+  const [products, setProducts] = useState<any[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [errorProducts, setErrorProducts] = useState<string | null>(null)
+
+  // Eliminar categorías estáticas y crear categorías dinámicamente a partir de los productos
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
 
   // Load config from localStorage
   useEffect(() => {
@@ -149,18 +105,99 @@ export default function WebPage() {
     }
   }, [])
 
-  const categories = [
-    { id: "all", name: "Todo", emoji: "🍽️" },
-    { id: "food", name: "Comida", emoji: "🍔" },
-    { id: "drinks", name: "Bebidas", emoji: "🥤" },
-    { id: "desserts", name: "Postres", emoji: "🍰" },
-  ]
+  useEffect(() => {
+    async function fetchProducts() {
+      setLoadingProducts(true)
+      setErrorProducts(null)
+      try {
+        console.log('businessId:', businessId)
+        if (!businessId) {
+          setErrorProducts('No se encontró el negocio (businessId)');
+          setLoadingProducts(false);
+          return;
+        }
+        const res = await fetch(`/api/products/public?businessId=${businessId}&pageSize=1000`)
+        if (!res.ok) throw new Error('Error al obtener productos')
+        const data = await res.json()
+        
+        // Filtrar productos duplicados por id antes de guardar
+        const uniqueProducts = Array.from(new Map((data.products || []).map((p: any) => [p.id, p])).values())
+        
+        // Asegurar que todos los productos tengan un precio válido
+        const productsWithPrices = uniqueProducts.map((product: any) => ({
+          ...product,
+          sell_price_inc_tax: Number(product.sell_price_inc_tax || product.price || 0),
+          image: product.image && product.image.trim() !== '' ? product.image : '/placeholder.svg'
+        }))
+        
+        console.log('Productos cargados:', productsWithPrices.length)
+        setProducts(productsWithPrices)
+      } catch (err: any) {
+        console.error('Error cargando productos:', err)
+        setErrorProducts(err.message || 'Error al obtener productos')
+      } finally {
+        setLoadingProducts(false)
+      }
+    }
+    if (businessId) fetchProducts()
+  }, [businessId])
 
-  const filteredProducts = webProducts.filter(
-    (product) => selectedCategory === "all" || product.category === selectedCategory,
-  )
+  // Obtener categorías igual que el POS
+  useEffect(() => {
+    async function fetchCategories() {
+      if (!businessId) return;
+      try {
+        const res = await fetch(`/api/products/categories?businessId=${businessId}`)
+        if (!res.ok) throw new Error('Error al obtener categorías')
+        const data = await res.json()
+        // Formato: [{ category: string, products: [] }]
+        const cats = data.categories
+          .filter((cat: any) => Array.isArray(cat.products) && cat.products.length > 0 && cat.products[0].category_id)
+          .map((cat: any) => ({
+            id: String(cat.products[0].category_id),
+            name: cat.category
+          }))
+        setCategories([{ id: 'all', name: 'Todos' }, ...cats, { id: 'otros', name: 'OTROS' }])
+      } catch (err) {
+        setCategories([{ id: 'all', name: 'Todos' }, { id: 'otros', name: 'OTROS' }])
+      }
+    }
+    fetchCategories()
+  }, [businessId])
 
-  const featuredProducts = webProducts.slice(0, 6)
+  // Filtrar productos igual que el POS
+  const filteredProducts = useMemo(() => {
+    if (selectedCategory === 'all') return products;
+    if (selectedCategory === 'otros') {
+      return products.filter((product) => !product.category_id)
+    }
+    return products.filter((product) => String(product.category_id) === String(selectedCategory))
+  }, [products, selectedCategory])
+
+  // Función helper para asignar emojis a categorías
+  function getCategoryEmoji(categoryName: string): string {
+    const categoryLower = categoryName.toLowerCase()
+    if (categoryLower.includes('bebida') || categoryLower.includes('drink') || categoryLower.includes('soda')) return '🥤'
+    if (categoryLower.includes('comida') || categoryLower.includes('food') || categoryLower.includes('plato')) return '🍽️'
+    if (categoryLower.includes('postre') || categoryLower.includes('dessert') || categoryLower.includes('dulce')) return '🍰'
+    if (categoryLower.includes('entrada') || categoryLower.includes('appetizer')) return '🥗'
+    if (categoryLower.includes('pizza')) return '🍕'
+    if (categoryLower.includes('hamburguesa') || categoryLower.includes('burger')) return '🍔'
+    if (categoryLower.includes('café') || categoryLower.includes('coffee')) return '☕'
+    if (categoryLower.includes('cerveza') || categoryLower.includes('beer')) return '🍺'
+    if (categoryLower.includes('vino') || categoryLower.includes('wine')) return '🍷'
+    return '🍽️'
+  }
+
+  // Mostrar todos los productos sin filtrar por categoría
+  // const filteredProducts = products;
+
+  console.log("PRODUCTOS FILTRADOS:", filteredProducts.length, "para categoría:", selectedCategory)
+
+  // Log cuando cambia selectedCategory
+  useEffect(() => {
+    console.log("selectedCategory CAMBIÓ A:", selectedCategory)
+  }, [selectedCategory])
 
   const handleCheckout = () => {
     router.push("/web-checkout")
@@ -168,6 +205,54 @@ export default function WebPage() {
 
   const scrollToMenu = () => {
     document.getElementById("menu")?.scrollIntoView({ behavior: "smooth" })
+  }
+
+  // Obtener 12 productos aleatorios para 'Nuestros Favoritos'
+  function getRandomProducts(arr: any[], n: number) {
+    if (!Array.isArray(arr)) return [];
+    const shuffled = arr.slice().sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, n);
+  }
+  const featuredProducts = getRandomProducts(products, 12);
+
+  // Filtrar productos duplicados por id antes de renderizar
+  const uniqueFilteredProducts = Array.from(
+    new Map(filteredProducts.map(p => [p.id, p])).values()
+  );
+
+  // Lógica de estado y filtrado para el buscador (solo frontend)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterAvailability, setFilterAvailability] = useState("");
+  const [filterPrice, setFilterPrice] = useState("");
+
+  const filteredSearchResults = useMemo(() => {
+    let results = products;
+    if (searchQuery.length > 0) {
+      results = results.filter(p =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.category_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    if (filterCategory) {
+      results = results.filter(p => String(p.category_id) === String(filterCategory));
+    }
+    if (filterAvailability) {
+      if (filterAvailability === 'disponible') results = results.filter(p => p.not_for_selling !== 0);
+      if (filterAvailability === 'nodisponible') results = results.filter(p => p.not_for_selling === 0);
+    }
+    if (filterPrice) {
+      if (filterPrice === 'low') results = results.filter(p => Number(p.sell_price_inc_tax) < 10);
+      if (filterPrice === 'mid') results = results.filter(p => Number(p.sell_price_inc_tax) >= 10 && Number(p.sell_price_inc_tax) <= 20);
+      if (filterPrice === 'high') results = results.filter(p => Number(p.sell_price_inc_tax) > 20);
+    }
+    return results.slice(0, 8); // Limita autosuggest
+  }, [products, searchQuery, filterCategory, filterAvailability, filterPrice]);
+
+  function handleSelectProduct(product) {
+    setSelectedProduct(product);
+    setSearchQuery("");
   }
 
   return (
@@ -269,16 +354,16 @@ export default function WebPage() {
                         <div className="flex flex-1 flex-col">
                           <div className="flex justify-between">
                             <h3 className="font-medium line-clamp-1">{item.name}</h3>
-                            <p className="font-medium">${(item.sell_price_inc_tax * item.quantity).toFixed(2)}</p>
+                            <p className="font-medium">{formatPrice(item.sell_price_inc_tax * item.quantity)}</p>
                           </div>
-                          <p className="text-sm text-muted-foreground">${item.sell_price_inc_tax.toFixed(2)} c/u</p>
+                          <p className="text-sm text-muted-foreground">{formatPrice(item.sell_price_inc_tax)} c/u</p>
                           <div className="mt-auto flex items-center justify-between">
                             <div className="flex items-center">
                               <Button
                                 variant="outline"
                                 size="icon"
                                 className="h-7 w-7"
-                                onClick={() => updateQuantity(item.id!, item.quantity - 1)}
+                                onClick={() => updateQuantity(Number(item.id), (item.quantity ?? 1) - 1)}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -287,7 +372,7 @@ export default function WebPage() {
                                 variant="outline"
                                 size="icon"
                                 className="h-7 w-7"
-                                onClick={() => updateQuantity(item.id!, item.quantity + 1)}
+                                onClick={() => updateQuantity(Number(item.id), (item.quantity ?? 1) + 1)}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
@@ -296,7 +381,7 @@ export default function WebPage() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-red-500"
-                              onClick={() => removeFromCart(item.id!)}
+                              onClick={() => removeFromCart(Number(item.id))}
                             >
                               <X className="h-4 w-4" />
                             </Button>
@@ -535,9 +620,9 @@ export default function WebPage() {
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <p className="text-2xl font-bold" style={{ color: config.primaryColor }}>
-                          ${product.sell_price_inc_tax.toFixed(2)}
+                          {formatPrice(Number(product.sell_price_inc_tax ?? product.price ?? 0))}
                         </p>
-                        <p className="text-sm text-gray-500 line-through">$${(product.sell_price_inc_tax * 1.2).toFixed(2)}</p>
+                        <p className="text-sm text-gray-500 line-through">{formatPrice(Number(product.sell_price_inc_tax ?? product.price ?? 0) * 1.2)}</p>
                       </div>
                       <Button
                         onClick={() => addToCart(product)}
@@ -598,15 +683,15 @@ export default function WebPage() {
       </section>
 
       {/* Menu Categories */}
-      <section className="py-20">
+      <section className="py-24 bg-gradient-to-b from-white to-orange-50">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-              <span className="bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+          <div className="text-center mb-20">
+            <h2 className="text-5xl font-extrabold mb-6 text-gray-900 drop-shadow-sm">
+              <span className="bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">
                 Explora Nuestro Menú
               </span>
             </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            <p className="text-2xl text-gray-600 max-w-2xl mx-auto font-light">
               Desde deliciosas comidas hasta refrescantes bebidas y postres irresistibles.
             </p>
           </div>
@@ -618,55 +703,79 @@ export default function WebPage() {
                 key={category.id}
                 variant={selectedCategory === category.id ? "default" : "outline"}
                 onClick={() => setSelectedCategory(category.id)}
-                className={`px-6 py-3 text-lg transition-all duration-300 ${
+                className={`px-8 py-3 text-lg font-semibold rounded-full shadow-md transition-all duration-300 border-2 border-transparent ${
                   selectedCategory === category.id
-                    ? "text-white shadow-lg"
-                    : "hover:border-orange-500 hover:text-orange-600"
+                    ? "bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg scale-105"
+                    : "bg-white text-gray-700 hover:border-orange-400 hover:text-orange-600 hover:scale-105"
                 }`}
                 style={
                   selectedCategory === category.id
-                    ? { background: `linear-gradient(to right, ${config.primaryColor}, ${config.secondaryColor})` }
+                    ? { background: "linear-gradient(to right, #f97316, #dc2626)" }
                     : {}
                 }
               >
-                <span className="mr-2">{category.emoji}</span>
                 {category.name}
               </Button>
             ))}
           </div>
 
           {/* Products Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {filteredProducts.map((product) => (
+          {loadingProducts ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+                <p className="text-gray-600">Cargando productos...</p>
+              </div>
+            </div>
+          ) : errorProducts ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <p className="text-red-500 mb-4">{errorProducts}</p>
+                <Button 
+                  onClick={() => window.location.reload()} 
+                  variant="outline"
+                >
+                  Reintentar
+                </Button>
+              </div>
+            </div>
+          ) : uniqueFilteredProducts.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <p className="text-gray-600 mb-2">No se encontraron productos en esta categoría</p>
+                <p className="text-sm text-gray-500">Intenta seleccionar otra categoría</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {uniqueFilteredProducts.map((product) => (
               <Card
                 key={product.id}
-                className="group overflow-hidden border-0 shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 bg-white"
+                className="group overflow-hidden border-0 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white rounded-2xl"
               >
-                <div className="relative overflow-hidden">
+                <div className="relative overflow-hidden rounded-t-2xl">
                   <Image
                     src={product.image || "/placeholder.svg"}
                     alt={product.name}
                     width={300}
                     height={200}
-                    className="w-full h-40 object-cover group-hover:scale-110 transition-transform duration-300"
+                    className="w-full h-44 object-cover group-hover:scale-110 transition-transform duration-300"
                   />
                 </div>
-                <CardContent className="p-4">
+                <CardContent className="p-6">
                   <div className="space-y-2">
-                    <h3 className="font-bold text-gray-900 line-clamp-1">{product.name}</h3>
-                    <div className="flex items-center justify-between">
-                      <p className="text-lg font-bold" style={{ color: config.primaryColor }}>
-                        ${product.sell_price_inc_tax.toFixed(2)}
+                    <h3 className="font-bold text-gray-900 text-lg line-clamp-1">{product.name}</h3>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xl font-bold text-orange-600">
+                        {formatPrice(Number(product.sell_price_inc_tax ?? product.price ?? 0))}
                       </p>
                       <Button
                         size="sm"
                         onClick={() => addToCart(product)}
-                        className="text-white"
-                        style={{
-                          background: `linear-gradient(to right, ${config.primaryColor}, ${config.secondaryColor})`,
-                        }}
+                        className="text-white rounded-full px-4 py-2 shadow-md hover:scale-110 transition-transform bg-gradient-to-r from-orange-500 to-red-500"
                       >
-                        <ShoppingCart className="w-3 h-3" />
+                        <ShoppingCart className="w-4 h-4 mr-1" />
+                        Agregar
                       </Button>
                     </div>
                   </div>
@@ -674,6 +783,110 @@ export default function WebPage() {
               </Card>
             ))}
           </div>
+          )}
+        </div>
+      </section>
+
+      {/* Encuentra tu producto */}
+      <section className="py-20 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-extrabold mb-4 text-gray-900 drop-shadow-sm">
+              Encuentra tu producto
+            </h2>
+            <p className="text-lg text-gray-600 max-w-xl mx-auto font-light">
+              Busca entre todos nuestros productos y filtra por categoría, precio o disponibilidad.
+            </p>
+          </div>
+          <div className="flex flex-col items-center justify-center gap-6">
+            {/* Barra de búsqueda */}
+            <div className="w-full max-w-2xl relative">
+              <input
+                type="text"
+                className="w-full px-6 py-4 rounded-full border-2 border-orange-300 focus:border-orange-500 shadow-md text-lg outline-none transition-all"
+                placeholder="¿Qué producto buscas? (ej: pizza, bebida, postre...)"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+              {/* Autosuggest */}
+              {searchQuery.length > 0 && (
+                <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl shadow-lg z-20 max-h-80 overflow-auto border border-orange-100">
+                  {filteredSearchResults.length === 0 ? (
+                    <div className="p-4 text-gray-400 text-center">No se encontraron productos</div>
+                  ) : (
+                    filteredSearchResults.map(product => (
+                      <div
+                        key={product.id}
+                        className="flex items-center gap-4 px-4 py-3 hover:bg-orange-50 cursor-pointer transition-all"
+                        onClick={() => handleSelectProduct(product)}
+                      >
+                        <img
+                          src={product.image || "/placeholder.svg"}
+                          alt={product.name}
+                          className="w-12 h-12 object-cover rounded-lg border"
+                        />
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900 line-clamp-1">{product.name}</div>
+                          <div className="text-sm text-gray-500 line-clamp-1">{product.category_name || 'Sin categoría'}</div>
+                        </div>
+                        <div className="font-bold text-orange-600 text-lg">{formatPrice(Number(product.sell_price_inc_tax))}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Filtros visuales (solo frontend) */}
+            <div className="flex flex-wrap gap-3 justify-center mt-4">
+              <select
+                className="px-4 py-2 rounded-full border border-orange-200 bg-white text-gray-700 shadow-sm focus:border-orange-400"
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value)}
+              >
+                <option value="">Todas las categorías</option>
+                {categories.filter(c => c.id !== 'all' && c.id !== 'otros').map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+              <select
+                className="px-4 py-2 rounded-full border border-orange-200 bg-white text-gray-700 shadow-sm focus:border-orange-400"
+                value={filterAvailability}
+                onChange={e => setFilterAvailability(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="disponible">Disponible</option>
+                <option value="nodisponible">No disponible</option>
+              </select>
+              <select
+                className="px-4 py-2 rounded-full border border-orange-200 bg-white text-gray-700 shadow-sm focus:border-orange-400"
+                value={filterPrice}
+                onChange={e => setFilterPrice(e.target.value)}
+              >
+                <option value="">Todos los precios</option>
+                <option value="low">Menos de $10</option>
+                <option value="mid">$10 - $20</option>
+                <option value="high">Más de $20</option>
+              </select>
+            </div>
+          </div>
+          {/* Resultados destacados (opcional) */}
+          {selectedProduct && (
+            <div className="mt-10 flex flex-col items-center">
+              <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-full flex flex-col items-center">
+                <img
+                  src={selectedProduct.image || "/placeholder.svg"}
+                  alt={selectedProduct.name}
+                  className="w-32 h-32 object-cover rounded-xl border mb-4"
+                />
+                <h3 className="text-2xl font-bold mb-2 text-gray-900">{selectedProduct.name}</h3>
+                <div className="text-lg text-gray-500 mb-2">{selectedProduct.category_name || 'Sin categoría'}</div>
+                <div className="text-2xl font-bold text-orange-600 mb-4">{formatPrice(Number(selectedProduct.sell_price_inc_tax))}</div>
+                <Button className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full shadow-lg text-lg font-semibold">
+                  <ShoppingCart className="w-5 h-5 mr-2" />Agregar al carrito
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -802,4 +1015,4 @@ export default function WebPage() {
       </footer>
     </div>
   )
-}
+} 

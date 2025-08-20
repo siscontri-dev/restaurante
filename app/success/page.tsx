@@ -7,6 +7,7 @@ import { Check, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useCart } from "../context/cart-context"
+import { formatPrice } from "@/lib/format-price"
 
 export default function SuccessPage() {
   const router = useRouter()
@@ -64,7 +65,7 @@ export default function SuccessPage() {
                   {item.name} × {item.quantity}
                 </p>
               </div>
-              <p>${(item.price * item.quantity).toFixed(2)}</p>
+                              <p>{formatPrice((item.sell_price_inc_tax || 0) * item.quantity)}</p>
             </div>
           ))}
         </div>
@@ -74,15 +75,15 @@ export default function SuccessPage() {
         <div className="space-y-2">
           <div className="flex justify-between">
             <p>Subtotal</p>
-            <p>${cartTotal.toFixed(2)}</p>
+            <p>{formatPrice(cartTotal || 0)}</p>
           </div>
           <div className="flex justify-between">
             <p>Tax (10%)</p>
-            <p>${tax.toFixed(2)}</p>
+            <p>{formatPrice(tax)}</p>
           </div>
           <div className="flex justify-between font-bold">
             <p>Total</p>
-            <p>${grandTotal.toFixed(2)}</p>
+            <p>{formatPrice(grandTotal)}</p>
           </div>
         </div>
 

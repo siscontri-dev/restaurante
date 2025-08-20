@@ -111,10 +111,10 @@ export default function CheckoutPage() {
                 <div>
                   <p className="font-medium">{item.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    ${item.price.toFixed(2)} × {item.quantity}
+                    ${item.sell_price_inc_tax.toFixed(2)} × {item.quantity}
                   </p>
                 </div>
-                <p className="font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-medium">${(item.sell_price_inc_tax * item.quantity).toFixed(2)}</p>
               </div>
             ))}
 

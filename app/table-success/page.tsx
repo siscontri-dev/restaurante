@@ -17,6 +17,7 @@ interface TableReceipt {
   paymentMethod: string
   receiptNumber: number
   date: string
+  fromCart?: boolean // Indicador si viene del POS
 }
 
 export default function TableSuccessPage() {
@@ -39,7 +40,12 @@ export default function TableSuccessPage() {
 
   const handleBackToTables = () => {
     localStorage.removeItem("table-receipt")
-    router.push("/tables")
+    // Redirigir según el origen
+    if (receipt?.fromCart) {
+      router.push("/pos")
+    } else {
+      router.push("/tables")
+    }
   }
 
   const handlePrint = () => {
@@ -74,8 +80,19 @@ export default function TableSuccessPage() {
         <Separator className="my-4" />
 
         <div className="space-y-3">
-          {receipt.items.map((item) => (
-            <div key={item.id} className="flex justify-between">
+          {Object.values(
+            receipt.items.reduce((acc, item) => {
+              if (!item.id) return acc;
+              const key = String(item.id);
+              if (!acc[key]) {
+                acc[key] = { ...item };
+              } else {
+                acc[key].quantity += item.quantity;
+              }
+              return acc;
+            }, {} as Record<string, typeof receipt.items[0]>)
+          ).map((item, index) => (
+            <div key={item.id + '-' + index} className="flex justify-between">
               <div>
                 <p>
                   {item.name} × {item.quantity}
@@ -89,14 +106,6 @@ export default function TableSuccessPage() {
         <Separator className="my-4" />
 
         <div className="space-y-2">
-          <div className="flex justify-between">
-            <p>Subtotal</p>
-            <p>${receipt.total.toFixed(2)}</p>
-          </div>
-          <div className="flex justify-between">
-            <p>Impuestos (10%)</p>
-            <p>${receipt.tax.toFixed(2)}</p>
-          </div>
           <div className="flex justify-between font-bold">
             <p>Total</p>
             <p>${receipt.grandTotal.toFixed(2)}</p>
@@ -109,7 +118,7 @@ export default function TableSuccessPage() {
             Imprimir Recibo
           </Button>
           <Button onClick={handleBackToTables} className="w-full">
-            Volver a Mesas
+            {receipt?.fromCart ? "Volver al POS" : "Volver a Mesas"}
           </Button>
         </div>
       </div>

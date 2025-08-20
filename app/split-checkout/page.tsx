@@ -1,5 +1,6 @@
 "use client"
 
+import { NextResponse } from "next/server"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, CreditCard, Wallet, Receipt, User, Check } from "lucide-react"
@@ -11,11 +12,25 @@ import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useTables, type Bill } from "../context/table-context"
+import { formatPrice } from "@/lib/format-price"
+import { jwtDecode } from "jwt-decode"
 
 interface SplitBillsData {
   tableId: number
   tableNumber: number
   bills: Bill[]
+}
+
+// Helper function to get business_id from token
+const getBusinessIdFromToken = (): number | null => {
+  try {
+    const token = localStorage.getItem('token')
+    if (!token) return null
+    const decoded: any = jwtDecode(token)
+    return decoded.business_id || null
+  } catch {
+    return null
+  }
 }
 
 export default function SplitCheckoutPage() {
@@ -30,6 +45,35 @@ export default function SplitCheckoutPage() {
     if (savedData) {
       try {
         const data = JSON.parse(savedData)
+        console.log('Split checkout - Datos cargados:', data)
+        console.log('Bills cargados:', data.bills)
+        
+        // Verificar cada bill
+        data.bills.forEach((bill: Bill, index: number) => {
+          console.log(`Bill ${index} cargado:`, {
+            id: bill.id,
+            personName: bill.personName,
+            items: bill.items,
+            itemsLength: bill.items?.length || 0,
+            total: bill.total
+          })
+          
+          // Log detallado de cada item en el bill
+          if (bill.items && bill.items.length > 0) {
+            bill.items.forEach((item, itemIndex) => {
+              console.log(`  Item ${itemIndex} en bill ${index}:`, {
+                productId: item.productId,
+                productName: item.product?.name,
+                quantity: item.quantity,
+                price: item.product?.sell_price_inc_tax,
+                isShared: item.isShared
+              })
+            })
+          } else {
+            console.log(`  Bill ${index} no tiene items asignados`)
+          }
+        })
+        
         setSplitBillsData(data)
         // Initialize payment methods
         const methods: Record<string, string> = {}
@@ -45,6 +89,8 @@ export default function SplitCheckoutPage() {
       router.push("/tables")
     }
   }, [router])
+
+  // (Revertido) No limpiar automáticamente al salir
 
   if (!splitBillsData) {
     return (
@@ -126,11 +172,103 @@ export default function SplitCheckoutPage() {
           invoice_number: invoiceData.reserved_number,
           prefix: invoiceData.full_invoice_number.replace(invoiceData.reserved_number.toString(), ''),
           final_total: bill.total,
-          res_table_id: splitBillsData.tableId
+          res_table_id: splitBillsData.tableId,
+          items: bill.items.map(item => ({
+            id: item.product.id,
+            price: item.product.sell_price_inc_tax,
+            quantity: item.quantity
+          }))
         }),
       })
 
       if (response.ok) {
+        const transactionResult = await response.json()
+        
+        // Registrar el pago en transaction_payments
+        await fetch('/api/transaction-payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            transaction_id: transactionResult.transaction_id,
+            method: paymentMethod,
+            amount: bill.total
+          })
+        })
+
+        // === AGREGAR A PRODUCCIÓN ===
+        // Verificar si usa comandas
+        const usaComandas = localStorage.getItem('usaComandas') === 'true'
+        
+        if (usaComandas) {
+          // Si usa comandas, agregar a comandas por área
+          const productosPorArea: Record<string, any[]> = {}
+          
+          bill.items.forEach((item) => {
+            const area = item.product.order_area_id ? 'Área ' + item.product.order_area_id : 'General'
+            if (!productosPorArea[area]) {
+              productosPorArea[area] = []
+            }
+            productosPorArea[area].push({
+              ...item.product,
+              quantity: item.quantity,
+              status: 'pending'
+            })
+          })
+          
+          Object.entries(productosPorArea).forEach(([area, items]) => {
+            const comandaId = `factura-split-${transactionResult.transaction_id}-${area}`
+            const businessId = getBusinessIdFromToken()
+            const comandasKey = businessId ? `restaurante-comandas-${businessId}` : 'restaurante-comandas'
+            const existingComandas = JSON.parse(localStorage.getItem(comandasKey) || '[]')
+            if (!existingComandas.some((c: any) => c.id === comandaId)) {
+              const comanda = {
+                id: comandaId,
+                tableNumber: splitBillsData.tableNumber,
+                tableId: splitBillsData.tableId.toString(),
+                waiter: "Split",
+                items: items,
+                createdAt: new Date(),
+                status: "pending" as const,
+                area: area,
+                estimatedTime: items.reduce((acc, item) => acc + (item.quantity || 1) * 5, 0)
+              }
+              // Agregar a comandas usando el contexto
+              const event = new CustomEvent('addComanda', { detail: comanda })
+              window.dispatchEvent(event)
+            }
+          })
+        } else {
+          // Si NO usa comandas, subir directamente a producción
+          const produccionItems = bill.items.map(item => ({ 
+            ...item.product, 
+            quantity: item.quantity,
+            status: 'completed' 
+          }))
+          
+          const produccionObj = {
+            id: `prod-split-${transactionResult.transaction_id}`,
+            comandaId: null,
+            tableNumber: splitBillsData.tableNumber,
+            tableId: splitBillsData.tableId.toString(),
+            waiter: "Split",
+            items: produccionItems,
+            createdAt: new Date(),
+            completedAt: new Date(),
+            status: "completed" as const,
+            area: "General",
+            estimatedTime: produccionItems.reduce((acc, item) => acc + (item.quantity || 1) * 5, 0),
+            hasRecipe: false
+          }
+          
+          // Agregar a producción usando el contexto
+          const event = new CustomEvent('moveToProduccion', { detail: produccionObj })
+          window.dispatchEvent(event)
+        }
+        // === FIN AGREGAR A PRODUCCIÓN ===
+
         setPaidBills((prev) => new Set([...prev, billId]))
       } else {
         const errorData = await response.text()
@@ -169,7 +307,33 @@ export default function SplitCheckoutPage() {
   }
 
   const allBillsPaid = splitBillsData.bills.every((bill) => paidBills.has(bill.id))
-  const totalAmount = splitBillsData.bills.reduce((sum, bill) => sum + bill.total, 0)
+  
+  // Calcular el total del pedido desde los items originales
+  const calculateTotalFromOriginalItems = () => {
+    const businessId = getBusinessIdFromToken()
+    const tablesKey = businessId ? `restaurant-tables-db-${businessId}` : 'restaurant-tables-db'
+    const tableData = localStorage.getItem(tablesKey)
+    if (!tableData) return 0
+    
+    try {
+      const tables = JSON.parse(tableData)
+      const currentTable = tables.find((t: any) => t.id === splitBillsData.tableId)
+      
+      if (!currentTable || !currentTable.currentOrder || !currentTable.currentOrder.items) {
+        return 0
+      }
+      
+      const originalItems = currentTable.currentOrder.items
+      return originalItems.reduce((sum: number, item: any) => {
+        return sum + ((item.sell_price_inc_tax || 0) * item.quantity)
+      }, 0)
+    } catch (error) {
+      console.error('Error al calcular total del pedido:', error)
+      return 0
+    }
+  }
+  
+  const totalAmount = calculateTotalFromOriginalItems()
 
   return (
     <div className="container mx-auto max-w-6xl py-8">
@@ -200,32 +364,50 @@ export default function SplitCheckoutPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="text-sm space-y-1">
-                {splitBillsData.bills.flatMap(bill => bill.items).reduce((acc, item) => {
-                  const existingItem = acc.find(i => i.productId === item.productId && !i.isShared)
-                  if (existingItem) {
-                    existingItem.quantity += item.quantity
-                  } else {
-                    acc.push({ ...item })
+                {(() => {
+                  // Obtener los items del pedido original de la mesa desde localStorage
+                  const businessId = getBusinessIdFromToken()
+                  const tablesKey = businessId ? `restaurant-tables-db-${businessId}` : 'restaurant-tables-db'
+                  const tableData = localStorage.getItem(tablesKey)
+                  if (!tableData) return <div>No se encontró información del pedido</div>
+                  
+                  try {
+                    const tables = JSON.parse(tableData)
+                    const currentTable = tables.find((t: any) => t.id === splitBillsData.tableId)
+                    
+                    if (!currentTable || !currentTable.currentOrder || !currentTable.currentOrder.items) {
+                      return <div>No se encontró información del pedido</div>
+                    }
+                    
+                    const originalItems = currentTable.currentOrder.items
+                    const groupedItems = originalItems.reduce((acc: any[], item: any) => {
+                      const existingItem = acc.find(i => i.id === item.id)
+                      if (existingItem) {
+                        existingItem.quantity += item.quantity
+                      } else {
+                        acc.push({ ...item })
+                      }
+                      return acc
+                    }, [])
+                    
+                    return groupedItems.map((item: any, index: number) => (
+                      <div key={index} className="flex justify-between">
+                        <span className="flex items-center gap-1">
+                          {item.quantity}x {item.name}
+                        </span>
+                        <span>{formatPrice((item.sell_price_inc_tax || 0) * item.quantity)}</span>
+                      </div>
+                    ))
+                  } catch (error) {
+                    console.error('Error al obtener items del pedido:', error)
+                    return <div>Error al cargar el pedido</div>
                   }
-                  return acc
-                }, [] as any[]).map((item, index) => (
-                  <div key={index} className="flex justify-between">
-                    <span className="flex items-center gap-1">
-                      {item.quantity}x {item.product.name}
-                      {item.isShared && (
-                        <Badge variant="outline" className="text-xs">
-                          Compartido
-                        </Badge>
-                      )}
-                    </span>
-                    <span>${(item.product.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
-                  </div>
-                ))}
+                })()}
               </div>
               <Separator />
               <div className="flex justify-between font-bold text-blue-800">
                 <span>Total del Pedido:</span>
-                <span>${totalAmount.toFixed(2)}</span>
+                <span>{formatPrice(totalAmount)}</span>
               </div>
             </CardContent>
           </Card>
@@ -270,7 +452,7 @@ export default function SplitCheckoutPage() {
                             <Badge variant="outline" className="text-xs">Compartido</Badge>
                           )}
                         </span>
-                        <span>${(item.product.sell_price_inc_tax * item.quantity).toFixed(2)}</span>
+                        <span>{formatPrice((item.product.sell_price_inc_tax || 0) * item.quantity)}</span>
                       </div>
                     ))}
                   </div>
@@ -279,15 +461,15 @@ export default function SplitCheckoutPage() {
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span>Subtotal</span>
-                      <span>${bill.subtotal.toFixed(2)}</span>
+                      <span>{formatPrice(bill.subtotal)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Impuestos (10%)</span>
-                      <span>${bill.tax.toFixed(2)}</span>
+                      <span>{formatPrice(bill.tax)}</span>
                     </div>
                     <div className="flex justify-between font-bold">
                       <span>Total</span>
-                      <span>${bill.total.toFixed(2)}</span>
+                      <span>{formatPrice(bill.total)}</span>
                     </div>
                   </div>
                   {!isPaid && (
@@ -359,7 +541,7 @@ export default function SplitCheckoutPage() {
                         </RadioGroup>
                       </div>
                       <Button className="w-full" onClick={() => handlePayBill(bill.id)}>
-                        Pagar ${bill.total.toFixed(2)}
+                        Pagar {formatPrice(bill.total)}
                       </Button>
                     </>
                   )}
@@ -397,7 +579,7 @@ export default function SplitCheckoutPage() {
               <div className="space-y-2">
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total General:</span>
-                  <span>${totalAmount.toFixed(2)}</span>
+                  <span>{formatPrice(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-muted-foreground">
                   <span>Monto pagado:</span>

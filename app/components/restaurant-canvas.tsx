@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Plus, Move, Hand, Settings, Receipt, Trash2, Minus, User } from "lucide-react"
+import { Plus, Move, Hand, Settings, Receipt, Trash2, Minus, User, Circle, ShoppingCart, Search, X, ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,13 +16,17 @@ import SplitBill from "./split-bill"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import NewTableDialog from "./new-table-dialog"
+import { formatPrice } from "@/lib/format-price"
 
 interface RestaurantCanvasProps {
   onTableSelect?: (table: Table) => void
   resTables?: Array<{ id: number; name: string; location_id: number; [key: string]: any }>
+  searchQuery?: string
+  setSearchQuery?: (query: string) => void
+  products?: any[] // Lista de productos para mostrar nombres en combos
 }
 
-export default function RestaurantCanvas({ onTableSelect, resTables }: RestaurantCanvasProps) {
+export default function RestaurantCanvas({ onTableSelect, resTables, searchQuery, setSearchQuery, products = [] }: RestaurantCanvasProps) {
   console.log('RestaurantCanvas - resTables recibidas:', resTables)
   
   const {
@@ -41,12 +45,17 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
   const [activeTab, setActiveTab] = useState("order")
   const router = useRouter()
   const [waiterName, setWaiterName] = useState("")
+  const [expandedCombos, setExpandedCombos] = useState<Set<number>>(new Set())
 
   const handleTableClick = (table: Table) => {
     if (!isDragMode) {
       setSelectedTable(table)
       onTableSelect?.(table)
     }
+  }
+
+  const handleCloseSelection = () => {
+    setSelectedTable(null)
   }
 
   // Actualizar selectedTable cuando cambien las tables
@@ -89,6 +98,27 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
   const handleCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDraggingProduct(false)
+  }
+
+  const toggleComboExpansion = (itemId: number) => {
+    setExpandedCombos(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId)
+      } else {
+        newSet.add(itemId)
+      }
+      return newSet
+    })
+  }
+
+  const isCombo = (item: any) => {
+    return item.combo && Array.isArray(item.combo) && item.combo.length > 0
+  }
+
+  const getProductName = (productId: number) => {
+    const product = products.find(p => p.id === productId)
+    return product ? product.name : `Producto ${productId}`
   }
 
   const getStatusStats = () => {
@@ -221,45 +251,62 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
       {/* Table Info Panel */}
       {currentSelectedTable && (
         <div className="w-96 border-l bg-background p-4 overflow-y-auto">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between">
-                {currentSelectedTable.name}
+          <Card className="shadow-xl border-2 border-primary/20 rounded-2xl">
+            <CardHeader className="pb-2 relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCloseSelection}
+                className="absolute top-2 right-2 h-8 w-8 p-0 hover:bg-gray-100 rounded-full z-10"
+              >
+                <X className="h-4 w-4 text-gray-500 hover:text-gray-700" />
+              </Button>
+              <CardTitle className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-2xl font-extrabold">
+                  <ShoppingCart className="h-6 w-6 text-primary/80" />
+                  {currentSelectedTable.name}
+                </span>
                 <div className="flex gap-2">
                   <Badge
                     variant="secondary"
                     className={
                       currentSelectedTable.status === "available"
-                        ? "bg-green-100 text-green-800"
+                        ? "bg-green-100 text-green-800 border border-green-300"
                         : currentSelectedTable.status === "occupied"
-                          ? "bg-red-100 text-red-800"
+                          ? "bg-red-100 text-red-800 border border-red-300"
                           : currentSelectedTable.status === "reserved"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-800"
+                            ? "bg-yellow-100 text-yellow-800 border border-yellow-300"
+                            : "bg-gray-100 text-gray-800 border border-gray-300"
                     }
                   >
                     {currentSelectedTable.status === "available"
-                      ? "Libre"
+                      ? <><span className='inline-block w-2 h-2 bg-green-500 rounded-full mr-1'></span>Libre</>
                       : currentSelectedTable.status === "occupied"
-                        ? "Ocupada"
+                        ? <><span className='inline-block w-2 h-2 bg-red-500 rounded-full mr-1'></span>Ocupada</>
                         : currentSelectedTable.status === "reserved"
-                          ? "Reservada"
-                          : "Necesita Limpieza"}
+                          ? <><span className='inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1'></span>Reservada</>
+                          : <><span className='inline-block w-2 h-2 bg-gray-400 rounded-full mr-1'></span>Necesita Limpieza</>}
                   </Badge>
                   {isSplitBill(currentSelectedTable) && (
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border border-purple-200">
                       Cuenta Dividida
                     </Badge>
                   )}
                 </div>
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {currentSelectedTable.seats} asientos • {currentSelectedTable.shape === "rectangle" ? "Rectangular" : "Circular"}
-              </p>
+              <div className="flex items-center gap-3 mt-2 text-gray-500 text-sm">
+                <User className="h-4 w-4" />
+                {currentSelectedTable.seats} asientos
+                <span className="mx-2">•</span>
+                <span className="flex items-center gap-1">
+                  {currentSelectedTable.shape === "rectangle" ? <Move className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                  {currentSelectedTable.shape === "rectangle" ? "Rectangular" : "Circular"}
+                </span>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-3 rounded-xl bg-primary/5">
                   <TabsTrigger value="order">Pedido</TabsTrigger>
                   <TabsTrigger value="tickets" className="relative">
                     Comandas
@@ -279,6 +326,21 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="order" className="mt-4 space-y-4">
+                  {/* Search Bar */}
+                  {setSearchQuery && (
+                    <div className="relative">
+                      <svg className="absolute left-3 top-2.5 h-4 w-4 text-black z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <Input
+                        placeholder="Buscar productos..."
+                        className="pl-10 bg-purple-50 text-purple-700 border-2 border-purple-300 rounded-lg shadow-sm hover:shadow-md hover:border-purple-600 hover:bg-purple-100 transition-all duration-200 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 placeholder-purple-500"
+                        value={searchQuery || ""}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  
                   {/* Current Order */}
                   {currentSelectedTable.currentOrder && currentSelectedTable.currentOrder.items.length > 0 ? (
                     <div>
@@ -289,42 +351,74 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
                         </Badge>
                       </div>
 
+                      {/* Agrupamiento visual de productos iguales */}
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {currentSelectedTable.currentOrder.items.map((item) => (
-                          <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
-                            <img
-                              src={item.image || "/placeholder.svg"}
-                              alt={item.name}
-                              className="w-10 h-10 object-cover rounded"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{item.name}</p>
-                              <p className="text-xs text-muted-foreground">${Number(item.sell_price_inc_tax).toFixed(2)} c/u</p>
+                        {Object.values(
+                          currentSelectedTable.currentOrder.items.reduce((acc, item) => {
+                            if (!item.id) return acc;
+                            const key = String(item.id);
+                            if (!acc[key]) {
+                              acc[key] = { ...item };
+                            } else {
+                              acc[key].quantity += item.quantity;
+                            }
+                            return acc;
+                          }, {} as Record<string, typeof currentSelectedTable.currentOrder.items[0]>)
+                        ).map((item, index) => (
+                                                    <div key={item.id + '-' + index} className="p-2 border rounded">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={item.image || "/placeholder.svg"}
+                                alt={item.name}
+                                className="w-10 h-10 object-cover rounded"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium text-sm truncate">{item.name}</p>
+                                  {isCombo(item) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-4 w-4 p-0 text-muted-foreground hover:text-primary transition-colors"
+                                      onClick={() => toggleComboExpansion(item.id!)}
+                                    >
+                                      {expandedCombos.has(item.id!) ? (
+                                        <ChevronUp className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronDown className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{formatPrice(Number(item.sell_price_inc_tax))}</p>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => {
-                                  console.log('Decreasing quantity for item:', item.id, 'current:', item.quantity)
-                                  updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity - 1)
-                                }}
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="w-8 text-center text-sm">{item.quantity}</span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => {
-                                  console.log('Increasing quantity for item:', item.id, 'current:', item.quantity)
-                                  updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity + 1)
-                                }}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
+                            
+                            {/* Controles de cantidad y eliminar */}
+                            <div className="flex items-center justify-between mt-2">
+                                                            <div className="flex items-center gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => {
+                                    updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity - 1)
+                                  }}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <span className="w-8 text-center text-sm">{item.quantity}</span>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => {
+                                    updateProductQuantityInTable(currentSelectedTable.id, item.id!, item.quantity + 1)
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -334,6 +428,23 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
+                            
+                            {/* Productos del combo expandido */}
+                            {isCombo(item) && expandedCombos.has(item.id!) && (
+                              <div className="w-full mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                <p className="text-xs text-gray-600 mb-2 font-semibold">Productos incluidos:</p>
+                                <div className="space-y-1.5">
+                                  {item.combo.map((productId: number, comboIndex: number) => (
+                                    <div key={comboIndex} className="flex items-center gap-2">
+                                      <div className="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
+                                      <span className="text-xs text-gray-700 font-medium">
+                                        {getProductName(productId)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -342,7 +453,7 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
 
                       <div className="flex justify-between items-center font-bold">
                         <span>Total:</span>
-                        <span>${Number(currentSelectedTable.currentOrder.total || 0).toFixed(2)}</span>
+                        <span>{formatPrice(Number(currentSelectedTable.currentOrder.total || 0))}</span>
                       </div>
 
                       <div className="flex gap-2 mt-4">
@@ -360,52 +471,59 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
                       </div>
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <p>No hay productos en esta mesa</p>
-                      <p className="text-sm">Arrastra productos desde la barra lateral</p>
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                      <ShoppingCart className="h-10 w-10 mb-2 text-primary/40" />
+                      <p className="font-semibold text-lg">No hay productos en esta mesa</p>
                     </div>
                   )}
 
                   {/* Table Status Controls */}
-                  <div className="space-y-2 pt-4">
-                    <p className="text-sm text-muted-foreground">Cambiar Estado</p>
+                  <div className="space-y-2 pt-6">
+                    <p className="text-sm text-muted-foreground font-semibold mb-1 flex items-center gap-2">
+                      <Settings className="h-4 w-4 text-primary/60" /> Cambiar Estado
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         variant={currentSelectedTable?.status === "available" ? "default" : "outline"}
                         size="sm"
+                        className="rounded-lg flex items-center gap-2 border border-green-200 bg-green-50 text-green-800 hover:bg-green-100"
                         onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "available")}
                       >
-                        Libre
+                        <Circle className="h-3 w-3 text-green-500" /> Libre
                       </Button>
                       <Button
                         variant={currentSelectedTable?.status === "reserved" ? "default" : "outline"}
                         size="sm"
+                        className="rounded-lg flex items-center gap-2 border border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100"
                         onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "reserved")}
                       >
-                        Reservada
+                        <Circle className="h-3 w-3 text-yellow-400" /> Reservada
                       </Button>
                       <Button
                         variant={currentSelectedTable?.status === "needs-cleaning" ? "default" : "outline"}
                         size="sm"
+                        className="rounded-lg flex items-center gap-2 border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 col-span-2"
                         onClick={() => currentSelectedTable && updateTableStatus(currentSelectedTable.id, "needs-cleaning")}
-                        className="col-span-2"
                       >
-                        Necesita Limpieza
+                        <Hand className="h-3 w-3 text-gray-400" /> Necesita Limpieza
                       </Button>
                     </div>
                   </div>
                   {/* Waiter Assignment */}
-                  <div className="space-y-2 pt-4">
-                    <p className="text-sm text-muted-foreground">Asignar Mesero</p>
+                  <div className="space-y-2 pt-6">
+                    <p className="text-sm text-muted-foreground font-semibold mb-1 flex items-center gap-2">
+                      <User className="h-4 w-4 text-primary/60" /> Asignar Mesero
+                    </p>
                     <div className="flex gap-2">
                       <Input
                         placeholder="Nombre del mesero"
                         value={waiterName}
                         onChange={(e) => setWaiterName(e.target.value)}
-                        className="flex-1"
+                        className="flex-1 rounded-lg border-primary/20"
                       />
                       <Button
                         size="sm"
+                        className="rounded-lg bg-primary/80 text-white hover:bg-primary flex items-center gap-1"
                         onClick={() => {
                           if (waiterName.trim() && currentSelectedTable) {
                             assignWaiterToTable(currentSelectedTable.id, waiterName.trim())
@@ -414,13 +532,13 @@ export default function RestaurantCanvas({ onTableSelect, resTables }: Restauran
                         }}
                         disabled={!waiterName.trim()}
                       >
-                        Asignar
+                        <User className="h-4 w-4 mr-1" /> Asignar
                       </Button>
                     </div>
                     {currentSelectedTable?.assignedWaiter && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <User className="h-4 w-4" />
-                        <span>Mesero: {currentSelectedTable.assignedWaiter}</span>
+                      <div className="flex items-center gap-2 text-sm mt-1 bg-primary/5 rounded px-2 py-1">
+                        <User className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-primary">Mesero: {currentSelectedTable.assignedWaiter}</span>
                       </div>
                     )}
                   </div>

@@ -17,9 +17,16 @@ export default function AreaOrdersPage() {
 
   // Cargar áreas
   const fetchAreas = async () => {
-    const res = await fetch("/api/order-areas")
-    const data = await res.json()
-    setAreas(data.areas || [])
+    try {
+      console.log('🔍 Cargando áreas...')
+      const res = await fetch("/api/order-areas")
+      const data = await res.json()
+      console.log('📦 Respuesta de la API:', data)
+      setAreas(data.data || [])
+      console.log('✅ Áreas cargadas:', data.data || [])
+    } catch (error) {
+      console.error('❌ Error cargando áreas:', error)
+    }
   }
 
   useEffect(() => {
@@ -90,28 +97,39 @@ export default function AreaOrdersPage() {
         />
         <Button onClick={handleAdd}>Agregar</Button>
       </div>
+      
+      {/* Debug info */}
+      <div className="mb-4 p-2 bg-gray-100 rounded text-sm">
+        <p>Estado actual: {areas.length} áreas cargadas</p>
+        <p>Áreas: {JSON.stringify(areas)}</p>
+      </div>
+      
       <ul className="space-y-2">
-        {areas.map(area => (
-          <li key={area.id} className="flex items-center gap-2 border p-2 rounded">
-            {editingId === area.id ? (
-              <>
-                <Input
-                  value={editingName}
-                  onChange={e => setEditingName(e.target.value)}
-                  className="flex-1"
-                />
-                <Button size="sm" onClick={handleUpdate}>Guardar</Button>
-                <Button size="sm" variant="outline" onClick={handleCancel}>Cancelar</Button>
-              </>
-            ) : (
-              <>
-                <span className="flex-1">{area.name}</span>
-                <Button size="sm" variant="outline" onClick={() => handleEdit(area)}>Editar</Button>
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(area.id)}>Eliminar</Button>
-              </>
-            )}
-          </li>
-        ))}
+        {areas.length === 0 ? (
+          <li className="text-gray-500 text-center py-4">No hay áreas configuradas</li>
+        ) : (
+          areas.map(area => (
+            <li key={area.id} className="flex items-center gap-2 border p-2 rounded">
+              {editingId === area.id ? (
+                <>
+                  <Input
+                    value={editingName}
+                    onChange={e => setEditingName(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button size="sm" onClick={handleUpdate}>Guardar</Button>
+                  <Button size="sm" variant="outline" onClick={handleCancel}>Cancelar</Button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1">{area.name}</span>
+                  <Button size="sm" variant="outline" onClick={() => handleEdit(area)}>Editar</Button>
+                  <Button size="sm" variant="destructive" onClick={() => handleDelete(area.id)}>Eliminar</Button>
+                </>
+              )}
+            </li>
+          ))
+        )}
       </ul>
     </div>
   )

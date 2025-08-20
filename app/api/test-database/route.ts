@@ -1,81 +1,78 @@
-import { NextResponse } from 'next/server'
-import { testConnections, executePosQuery } from '@/lib/database'
+import { NextRequest, NextResponse } from 'next/server'
+import { executePosQuery } from '@/lib/database'
+import { verifyToken } from '@/lib/utils'
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    console.log('🔍 Probando conexiones a bases de datos...')
+    console.log('🔍 Iniciando GET /api/test-database')
+    const authHeader = req.headers.get('authorization')
     
-    // Probar todas las conexiones
-    const connectionResults = await testConnections()
+    if (!authHeader) {
+      return NextResponse.json(
+        { success: false, error: 'Token de autorización requerido' },
+        { status: 401 }
+      )
+    }
+
+    const { businessId } = verifyToken(authHeader)
+    console.log('✅ Business ID:', businessId)
     
-    // Consulta simple para validar conexión a la tabla business
-    let businessName = null
-    let businessError = null
-    
-    try {
-      const query = 'SELECT name FROM business WHERE id = ?'
-      const rows = await executePosQuery(query, [165]) as any[]
-      
-      if (rows.length > 0) {
-        businessName = rows[0].name
-        console.log(`✅ Empresa encontrada: ${businessName}`)
-      } else {
-        businessError = 'No se encontró la empresa con id=165'
-        console.log('❌ No se encontró la empresa con id=165')
+    // Verificar si existe el campo is_produced
+    const checkColumn = await executePosQuery(
+      `SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT 
+       FROM INFORMATION_SCHEMA.COLUMNS 
+       WHERE TABLE_SCHEMA = 'siscontr_pos37' 
+       AND TABLE_NAME = 'transactions' 
+       AND COLUMN_NAME = 'is_produced'`
+    ) as any[]
+
+    console.log('✅ Verificación de columna:', checkColumn)
+
+    // Obtener algunas transacciones de ejemplo
+    const sampleTransactions = await executePosQuery(
+      `SELECT 
+        id, invoice_no, final_total, is_produced, type, created_at
+       FROM transactions 
+       WHERE business_id = ? 
+       ORDER BY created_at DESC 
+       LIMIT 5`,
+      [businessId]
+    ) as any[]
+
+    console.log('✅ Transacciones de ejemplo:', sampleTransactions)
+
+    // Contar transacciones por estado
+    const countByStatus = await executePosQuery(
+      `SELECT 
+        is_produced,
+        COUNT(*) as count
+       FROM transactions 
+       WHERE business_id = ? AND type = 'sell'
+       GROUP BY is_produced`,
+      [businessId]
+    ) as any[]
+
+    console.log('✅ Conteo por estado:', countByStatus)
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        columnExists: checkColumn.length > 0,
+        columnInfo: checkColumn[0] || null,
+        sampleTransactions,
+        countByStatus,
+        businessId
       }
-    } catch (error) {
-      businessError = error instanceof Error ? error.message : 'Error desconocido'
-      console.error('❌ Error consultando tabla business:', error)
-    }
-    
-    const response = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      connections: connectionResults,
-      business: {
-        id: 165,
-        name: businessName,
-        error: businessError
-      },
-      message: 'Conexión a base de datos probada exitosamente'
-    }
-    
-    return NextResponse.json(response)
-    
-  } catch (error) {
-    console.error('💥 Error en API test-database:', error)
-    
-    return NextResponse.json({
-      success: false,
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Error desconocido',
-      message: 'Error al probar conexión a base de datos'
-    }, { status: 500 })
-  }
-}
-
-export async function GETStructure(req: Request) {
-  try {
-    // Obtener la estructura de la tabla products
-    console.log('🔍 Obteniendo estructura de la tabla products...')
-    const structure = await executePosQuery('SHOW COLUMNS FROM products') as any[]
-    console.log('✅ Estructura de la tabla:', structure)
-
-    // Obtener una muestra de datos
-    console.log('🔍 Obteniendo muestra de datos...')
-    const sample = await executePosQuery('SELECT * FROM products LIMIT 1') as any[]
-    console.log('✅ Muestra de datos:', sample[0])
-
-    return NextResponse.json({
-      success: true,
-      structure: structure,
-      sampleData: sample[0] || null
     })
   } catch (error) {
-    console.error('❌ Error:', error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Error interno del servidor',
-      details: error
-    }, { status: 500 })
+    console.error('❌ Error en GET /api/test-database:', error)
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Error interno del servidor',
+        details: error instanceof Error ? error.message : 'Error desconocido'
+      },
+      { status: 500 }
+    )
   }
 } 

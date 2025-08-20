@@ -6,11 +6,17 @@ export interface Product {
   name: string
   sku: string
   sell_price_inc_tax: number
+  default_sell_price?: number // Precio sin impuesto
+  default_purchase_price?: number // Precio de compra sin impuesto
+  dpp_inc_tax?: number // Precio de compra con impuesto
+  profit_percent?: number // Margen de ganancia
   image: string | null
   product_description: string | null
   business_id: number
+  created_by?: number
   not_for_selling: number
   order_area_id?: number | null
+  combo?: number[] | null // Array de IDs de productos que forman el combo
 }
 
 interface ProductQueryResult {
@@ -25,44 +31,63 @@ function handleAuthError(error: any): never {
 }
 
 export async function getProducts(businessId: number, page: number = 1, pageSize: number = 20): Promise<ProductQueryResult> {
-  const offset = (page - 1) * pageSize
+  const limitValue = Number.isInteger(Number(pageSize)) && Number(pageSize) > 0 ? Number(pageSize) : 20;
+  const offsetValue = Number.isInteger(Number((page - 1) * limitValue)) && Number((page - 1) * limitValue) >= 0 ? Number((page - 1) * limitValue) : 0;
   
-  const [products, [{ total }]] = await Promise.all([
-    executePosQuery(
-      `SELECT DISTINCT 
+  const query = `
+    SELECT DISTINCT 
          p.id, 
          p.name, 
          p.sku, 
-         v.sell_price_inc_tax, 
+         p.category_id, 
+         c.name as category_name,
+         v.sell_price_inc_tax,
+         v.tax_percent,
+         CASE 
+           WHEN v.tax_percent > 0 THEN v.sell_price_inc_tax / (1 + v.tax_percent / 100)
+           ELSE v.sell_price_inc_tax
+         END as default_sell_price,
          p.image, 
          p.product_description, 
          p.business_id, 
          p.not_for_selling, 
-         p.order_area_id
+         p.order_area_id,
+         p.combo
        FROM products p
-       JOIN variations v ON p.id = v.product_id
+    LEFT JOIN variations v ON p.id = v.product_id
+       LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.business_id = ?
        ORDER BY p.id DESC
-       LIMIT ? OFFSET ?`,
-      [businessId, pageSize, offset]
-    ) as Promise<Product[]>,
+    LIMIT ${limitValue} OFFSET ${offsetValue}
+  `;
+
+  const [products, totalArr] = await Promise.all([
+    executePosQuery(query, [businessId]) as Promise<Product[]>,
     executePosQuery(
       `SELECT COUNT(DISTINCT p.id) as total
        FROM products p
-       JOIN variations v ON p.id = v.product_id
+       LEFT JOIN variations v ON p.id = v.product_id
        WHERE p.business_id = ?`,
       [businessId]
     ) as Promise<[{ total: number }]>
   ])
+  const total = Array.isArray(totalArr) && totalArr.length > 0 ? totalArr[0].total : 0;
+  console.log('products raw:', products);
+  console.log('total raw:', total);
 
-  return { 
-    products: products.map(product => ({
-      ...product,
-      image: product.image && product.image.trim() !== '' ? product.image : '/placeholder.svg',
-      order_area_id: product.order_area_id ?? null
-    })),
-    total: total || 0 
-  }
+      return { 
+      products: products.map(product => ({
+        ...product,
+        image: product.image && product.image.trim() !== '' ? product.image : '/placeholder.svg',
+        sell_price_inc_tax: Number(product.sell_price_inc_tax) || 0,
+        default_sell_price: Number((product as any).default_sell_price) || 0,
+        category_id: (product as any).category_id ?? null,
+        category_name: (product as any).category_name ?? 'Sin categoría',
+        order_area_id: product.order_area_id ?? null,
+        combo: (product as any).combo ? JSON.parse((product as any).combo) : null
+      })),
+      total: total || 0 
+    }
 }
 
 export async function getProductsByBusinessId(businessId: number, limit = 20, offset = 0): Promise<Product[]> {
@@ -72,12 +97,18 @@ export async function getProductsByBusinessId(businessId: number, limit = 20, of
         p.id, 
         p.name, 
         p.sku, 
-        v.sell_price_inc_tax, 
+        v.sell_price_inc_tax,
+        v.tax_percent,
+        CASE 
+          WHEN v.tax_percent > 0 THEN v.sell_price_inc_tax / (1 + v.tax_percent / 100)
+          ELSE v.sell_price_inc_tax
+        END as default_sell_price,
         p.image, 
         p.product_description, 
         p.business_id, 
         p.not_for_selling, 
-        p.order_area_id
+        p.order_area_id,
+        p.combo
       FROM products p
       LEFT JOIN variations v ON p.id = v.product_id
       WHERE p.business_id = ?
@@ -97,11 +128,13 @@ export async function getProductsByBusinessId(businessId: number, limit = 20, of
       name: row.name || 'Sin nombre',
       sku: row.sku || 'SIN-SKU',
       sell_price_inc_tax: parseFloat(row.sell_price_inc_tax) || 0,
+      default_sell_price: parseFloat(row.default_sell_price) || 0,
       image: row.image && row.image.trim() !== '' ? row.image : '/placeholder.svg',
       product_description: row.product_description || null,
       business_id: row.business_id,
       not_for_selling: row.not_for_selling,
-      order_area_id: row.order_area_id ?? null
+      order_area_id: row.order_area_id ?? null,
+      combo: row.combo ? JSON.parse(row.combo) : null
     }))
     
     console.log('✅ Total productos:', mappedProducts.length)
@@ -113,6 +146,29 @@ export async function getProductsByBusinessId(businessId: number, limit = 20, of
 }
 
 export async function createProduct(data: Omit<Product, 'id'>) {
+  // Validación de datos antes de proceder
+  console.log('🔍 Validación en createProduct:')
+  console.log('  - name:', data.name, 'tipo:', typeof data.name, 'longitud:', data.name?.length)
+  console.log('  - sku:', data.sku, 'tipo:', typeof data.sku)
+  console.log('  - business_id:', data.business_id, 'tipo:', typeof data.business_id)
+  console.log('  - created_by:', data.created_by, 'tipo:', typeof data.created_by)
+  
+  if (!data.name || data.name.trim() === '') {
+    throw new Error('El nombre del producto es requerido')
+  }
+  
+  if (!data.sku || data.sku.trim() === '') {
+    throw new Error('El SKU del producto es requerido')
+  }
+  
+  if (!data.business_id) {
+    throw new Error('El business_id es requerido')
+  }
+  
+  if (!data.created_by) {
+    throw new Error('El created_by es requerido')
+  }
+  
   const connection = await posPool.getConnection()
   
   try {
@@ -120,10 +176,20 @@ export async function createProduct(data: Omit<Product, 'id'>) {
 
     // 1. Crear el producto base
     console.log('🔧 Ejecutando INSERT con order_area_id:', data.order_area_id)
+    console.log('🔍 Valores a insertar:')
+    console.log('  - name:', data.name)
+    console.log('  - sku:', data.sku)
+    console.log('  - image:', data.image)
+    console.log('  - product_description:', data.product_description)
+    console.log('  - business_id:', data.business_id)
+    console.log('  - created_by:', data.created_by)
+    console.log('  - not_for_selling:', data.not_for_selling)
+    console.log('  - order_area_id:', data.order_area_id)
+    
     const [productResult] = await connection.execute(
-      `INSERT INTO products (name, sku, image, product_description, business_id, not_for_selling, order_area_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [data.name, data.sku, data.image, data.product_description, data.business_id, data.not_for_selling, data.order_area_id]
+      `INSERT INTO products (name, sku, image, product_description, business_id, created_by, not_for_selling, order_area_id, tax, combo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [data.name, data.sku, data.image, data.product_description, data.business_id, data.created_by, data.not_for_selling, data.order_area_id, data.tax, data.combo ? JSON.stringify(data.combo) : '[]']
     ) as any
 
     const productId = productResult.insertId
@@ -139,9 +205,9 @@ export async function createProduct(data: Omit<Product, 'id'>) {
 
     // 3. Crear la variación
     await connection.execute(
-      `INSERT INTO variations (product_id, product_variation_id, sell_price_inc_tax)
-       VALUES (?, ?, ?)`,
-      [productId, pvId, data.sell_price_inc_tax]
+      `INSERT INTO variations (product_id, product_variation_id, name, sell_price_inc_tax, default_sell_price, profit_percent, default_purchase_price, dpp_inc_tax)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [productId, pvId, data.name, data.sell_price_inc_tax, data.default_sell_price || 0, data.profit_percent || 0, data.default_purchase_price || 0, data.dpp_inc_tax || 0]
     )
 
     await connection.commit()
@@ -167,7 +233,9 @@ export async function updateProduct(id: number, data: Partial<Product>) {
            image = COALESCE(?, image),
          product_description = COALESCE(?, product_description),
          not_for_selling = COALESCE(?, not_for_selling),
-         order_area_id = COALESCE(?, order_area_id)
+         order_area_id = COALESCE(?, order_area_id),
+         tax = COALESCE(?, tax),
+         combo = COALESCE(?, combo)
        WHERE id = ?`,
     [
       data.name ?? null, 
@@ -176,17 +244,23 @@ export async function updateProduct(id: number, data: Partial<Product>) {
       data.product_description ?? null, 
       data.not_for_selling ?? null, 
       data.order_area_id ?? null,
+      data.tax ?? null,
+      data.combo ? JSON.stringify(data.combo) : '[]',
       id
     ]
     )
 
-    // 2. Si hay precio, actualizar la variación
-    if (data.sell_price_inc_tax !== undefined) {
+    // 2. Actualizar la variación con todos los campos de precio
     await executePosQuery(
-      `UPDATE variations SET sell_price_inc_tax = ? WHERE product_id = ?`,
-        [data.sell_price_inc_tax, id]
-      )
-    }
+      `UPDATE variations 
+       SET sell_price_inc_tax = COALESCE(?, sell_price_inc_tax),
+           default_sell_price = COALESCE(?, default_sell_price),
+           profit_percent = COALESCE(?, profit_percent),
+           default_purchase_price = COALESCE(?, default_purchase_price),
+           dpp_inc_tax = COALESCE(?, dpp_inc_tax)
+       WHERE product_id = ?`,
+      [data.sell_price_inc_tax, data.default_sell_price, data.profit_percent, data.default_purchase_price, data.dpp_inc_tax, id]
+    )
     return true
 }
 

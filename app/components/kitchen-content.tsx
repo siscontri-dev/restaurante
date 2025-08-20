@@ -3,8 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { ArrowLeft, Clock, CheckCircle, AlertCircle, User, MapPin } from "lucide-react"
+import { Clock, CheckCircle, AlertCircle, User, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -32,8 +31,7 @@ interface KitchenOrder {
   estimatedTime?: number
 }
 
-export default function KitchenPage() {
-  const router = useRouter()
+export default function KitchenContent() {
   const { tables } = useTables()
   const [orders, setOrders] = useState<KitchenOrder[]>([])
   const [selectedArea, setSelectedArea] = useState<"kitchen" | "cafeteria" | "bar">("kitchen")
@@ -133,15 +131,11 @@ export default function KitchenPage() {
   const readyCount = filteredOrders.filter((o) => o.status === "ready").length
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="w-full">
       {/* Header */}
       <div className="bg-white border-b p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.push("/tables")}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Volver a Mesas
-            </Button>
             <h1 className="text-2xl font-bold">Sistema de Comandas</h1>
           </div>
 
@@ -331,4 +325,4 @@ function OrdersGrid({ orders, area, onUpdateStatus, getStatusColor, getStatusIco
       ))}
     </div>
   )
-}
+} 
